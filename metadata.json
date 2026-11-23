@@ -1,0 +1,6 @@
+{
+  "name": "Apotek Andhika Farma — Stok Obat & SPK TOPSIS",
+  "description": "Sistem Manajemen Stok Obat berbasis FEFO dan Sistem Pendukung Keputusan Penentuan Prioritas Pengadaan Obat pada Apotek Andhika Farma menggunakan Metode TOPSIS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
