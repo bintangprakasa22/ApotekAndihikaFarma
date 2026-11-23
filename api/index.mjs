@@ -1,6 +1,8 @@
-import { createRequire } from 'module';
+// @ts-ignore - api/_server.cjs is generated during Vercel buildCommand
+import mod from './_server.cjs';
 
-const require = createRequire(import.meta.url);
-const mod = require('./_server.cjs');
+const app = mod.default || mod;
 
-export default mod.default || mod;
+export default function handler(req, res) {
+  return app(req, res);
+}

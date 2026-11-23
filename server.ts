@@ -1589,8 +1589,9 @@ app.get('/api/audit-logs', requireAuth, requireRole('admin'), async (req: AuthRe
 async function startServer() {
   const PORT = Number(process.env.PORT || 3000);
 
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    const vitePkg = 'vite';
+    const { createServer: createViteServer } = await import(vitePkg);
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
