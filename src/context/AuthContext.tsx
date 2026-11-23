@@ -18,6 +18,7 @@ interface AuthContextValue {
   profile: UserProfile | null;
   unreadNotifications: number;
   loading: boolean;
+  signingIn: boolean;
   authError: string | null;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
@@ -32,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [signingIn, setSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Simpan token hanya di memori JS (tidak pernah di localStorage)
@@ -109,14 +111,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     setAuthError(null);
+    setSigningIn(true);
     try {
-      await signInWithPopup(auth, googleAuthProvider);
+      const cred = await signInWithPopup(auth, googleAuthProvider);
+      if (cred.user) {
+        setFirebaseUser(cred.user);
+        await loadBackendProfile(cred.user);
+      }
     } catch (err: unknown) {
       const msg =
         err instanceof Error
           ? err.message
           : 'Proses masuk dengan Google dibatalkan atau gagal.';
       setAuthError(msg);
+    } finally {
+      setSigningIn(false);
     }
   };
 
@@ -140,6 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         unreadNotifications,
         loading,
+        signingIn,
         authError,
         signInWithGoogle,
         logout,

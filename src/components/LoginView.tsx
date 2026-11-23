@@ -2,7 +2,7 @@ import { ShieldCheck, PackageCheck, BarChart3, AlertCircle } from 'lucide-react'
 import { useAuth } from '../context/AuthContext';
 
 export function LoginView() {
-  const { signInWithGoogle, authError } = useAuth();
+  const { signInWithGoogle, signingIn, authError } = useAuth();
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
@@ -77,7 +77,8 @@ export function LoginView() {
           <button
             type="button"
             onClick={signInWithGoogle}
-            className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2.5 cursor-pointer whitespace-nowrap"
+            disabled={signingIn}
+            className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2.5 cursor-pointer whitespace-nowrap"
           >
             <svg className="w-4 h-4 bg-white rounded-full p-0.5" viewBox="0 0 24 24" aria-hidden="true">
               <path
@@ -97,7 +98,7 @@ export function LoginView() {
                 d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
               />
             </svg>
-            <span>Masuk dengan Google</span>
+            <span>{signingIn ? 'Memproses Masuk...' : 'Masuk dengan Google'}</span>
           </button>
 
           <div className="mt-6 pt-5 border-t border-slate-100 space-y-2 text-xs text-slate-500">

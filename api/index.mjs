@@ -1,3 +1,6 @@
-import app from './_server.mjs';
+import { createRequire } from 'module';
 
-export default app;
+const require = createRequire(import.meta.url);
+const mod = require('./_server.cjs');
+
+export default mod.default || mod;
