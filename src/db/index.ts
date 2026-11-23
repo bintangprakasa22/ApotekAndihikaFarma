@@ -8,12 +8,13 @@ declare global {
 
 export const createPool = () => {
   if (!global._postgresPool) {
+    const maxConns = process.env.VERCEL ? 3 : 10;
     const useExternalUrl = Boolean(process.env.DATABASE_URL && !process.env.SQL_HOST);
     global._postgresPool = useExternalUrl
       ? new Pool({
           connectionString: process.env.DATABASE_URL,
           ssl: { rejectUnauthorized: false },
-          max: 10,
+          max: maxConns,
           connectionTimeoutMillis: 15000,
         })
       : new Pool({
@@ -23,7 +24,7 @@ export const createPool = () => {
           password: process.env.SQL_PASSWORD,
           database: process.env.SQL_DB_NAME,
           ssl: process.env.SQL_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
-          max: 10,
+          max: maxConns,
           connectionTimeoutMillis: 15000,
         });
 
