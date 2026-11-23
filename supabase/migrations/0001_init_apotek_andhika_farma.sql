@@ -268,59 +268,77 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- Profiles: pengguna melihat profil sendiri, Admin mengelola semua profil
+DROP POLICY IF EXISTS "profiles_select_self_or_admin" ON public.profiles;
 CREATE POLICY "profiles_select_self_or_admin" ON public.profiles
   FOR SELECT USING (uid = auth.uid()::text OR public.get_my_role() = 'admin');
+DROP POLICY IF EXISTS "profiles_admin_all" ON public.profiles;
 CREATE POLICY "profiles_admin_all" ON public.profiles
   FOR ALL USING (public.get_my_role() = 'admin') WITH CHECK (public.get_my_role() = 'admin');
 
 -- Master Data & Stok: Admin & Petugas aktif dapat membaca & mengelola operasional
+DROP POLICY IF EXISTS "categories_staff_all" ON public.categories;
 CREATE POLICY "categories_staff_all" ON public.categories
   FOR ALL USING (public.get_my_role() IN ('admin', 'petugas'))
   WITH CHECK (public.get_my_role() IN ('admin', 'petugas'));
 
+DROP POLICY IF EXISTS "suppliers_staff_all" ON public.suppliers;
 CREATE POLICY "suppliers_staff_all" ON public.suppliers
   FOR ALL USING (public.get_my_role() IN ('admin', 'petugas'))
   WITH CHECK (public.get_my_role() IN ('admin', 'petugas'));
 
+DROP POLICY IF EXISTS "medicines_staff_all" ON public.medicines;
 CREATE POLICY "medicines_staff_all" ON public.medicines
   FOR ALL USING (public.get_my_role() IN ('admin', 'petugas'))
   WITH CHECK (public.get_my_role() IN ('admin', 'petugas'));
 
+DROP POLICY IF EXISTS "batches_staff_all" ON public.medicine_batches;
 CREATE POLICY "batches_staff_all" ON public.medicine_batches
   FOR ALL USING (public.get_my_role() IN ('admin', 'petugas'))
   WITH CHECK (public.get_my_role() IN ('admin', 'petugas'));
 
+DROP POLICY IF EXISTS "movements_staff_read_insert" ON public.stock_movements;
 CREATE POLICY "movements_staff_read_insert" ON public.stock_movements
   FOR SELECT USING (public.get_my_role() IN ('admin', 'petugas'));
+DROP POLICY IF EXISTS "movements_staff_insert" ON public.stock_movements;
 CREATE POLICY "movements_staff_insert" ON public.stock_movements
   FOR INSERT WITH CHECK (public.get_my_role() IN ('admin', 'petugas'));
 
 -- Kriteria TOPSIS: Semua staf dapat membaca, HANYA Admin dapat mengubah bobot
+DROP POLICY IF EXISTS "criteria_staff_read" ON public.topsis_criteria;
 CREATE POLICY "criteria_staff_read" ON public.topsis_criteria
   FOR SELECT USING (public.get_my_role() IN ('admin', 'petugas'));
+DROP POLICY IF EXISTS "criteria_admin_write" ON public.topsis_criteria;
 CREATE POLICY "criteria_admin_write" ON public.topsis_criteria
   FOR ALL USING (public.get_my_role() = 'admin') WITH CHECK (public.get_my_role() = 'admin');
 
 -- Riwayat & Hasil TOPSIS: Staf dapat membaca & menjalankan, HANYA Admin dapat menghapus
+DROP POLICY IF EXISTS "topsis_runs_staff_read" ON public.topsis_runs;
 CREATE POLICY "topsis_runs_staff_read" ON public.topsis_runs
   FOR SELECT USING (public.get_my_role() IN ('admin', 'petugas'));
+DROP POLICY IF EXISTS "topsis_runs_staff_insert" ON public.topsis_runs;
 CREATE POLICY "topsis_runs_staff_insert" ON public.topsis_runs
   FOR INSERT WITH CHECK (public.get_my_role() IN ('admin', 'petugas'));
+DROP POLICY IF EXISTS "topsis_runs_admin_delete" ON public.topsis_runs;
 CREATE POLICY "topsis_runs_admin_delete" ON public.topsis_runs
   FOR DELETE USING (public.get_my_role() = 'admin');
 
+DROP POLICY IF EXISTS "topsis_results_staff_read" ON public.topsis_results;
 CREATE POLICY "topsis_results_staff_read" ON public.topsis_results
   FOR SELECT USING (public.get_my_role() IN ('admin', 'petugas'));
+DROP POLICY IF EXISTS "topsis_results_staff_insert" ON public.topsis_results;
 CREATE POLICY "topsis_results_staff_insert" ON public.topsis_results
   FOR INSERT WITH CHECK (public.get_my_role() IN ('admin', 'petugas'));
 
 -- Notifikasi: Staf aktif dapat membaca & menandai dibaca
+DROP POLICY IF EXISTS "notifications_staff_all" ON public.notifications;
 CREATE POLICY "notifications_staff_all" ON public.notifications
   FOR ALL USING (public.get_my_role() IN ('admin', 'petugas'))
   WITH CHECK (public.get_my_role() IN ('admin', 'petugas'));
 
 -- Audit Logs: HANYA Admin dapat membaca
+DROP POLICY IF EXISTS "audit_logs_admin_read" ON public.audit_logs;
 CREATE POLICY "audit_logs_admin_read" ON public.audit_logs
   FOR SELECT USING (public.get_my_role() = 'admin');
+DROP POLICY IF EXISTS "audit_logs_staff_insert" ON public.audit_logs;
 CREATE POLICY "audit_logs_staff_insert" ON public.audit_logs
   FOR INSERT WITH CHECK (public.get_my_role() IN ('admin', 'petugas'));
