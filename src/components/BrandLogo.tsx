@@ -11,7 +11,10 @@ const SIZE_CLASSES: Record<'sm' | 'md' | 'lg', string> = {
   lg: 'w-20 h-20 p-1 rounded-2xl',
 };
 
-export function BrandLogo({ size = 'md', className = '' }: BrandLogoProps) {
+export const BrandLogo = React.memo(function BrandLogo({
+  size = 'md',
+  className = '',
+}: BrandLogoProps) {
   const [imgError, setImgError] = useState(false);
 
   return (
@@ -23,6 +26,8 @@ export function BrandLogo({ size = 'md', className = '' }: BrandLogoProps) {
           src="/assets/aistudio/apt_andhika_f52075c8.png"
           alt="Logo Apotek Andhika Farma"
           referrerPolicy="no-referrer"
+          decoding="async"
+          loading="eager"
           onError={() => setImgError(true)}
           className="w-full h-full object-contain"
         />
@@ -31,4 +36,4 @@ export function BrandLogo({ size = 'md', className = '' }: BrandLogoProps) {
       )}
     </div>
   );
-}
+});

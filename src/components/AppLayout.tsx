@@ -147,20 +147,34 @@ const DesktopSidebar = React.memo(function DesktopSidebar({
   );
 });
 
-interface MobileDrawerProps extends SidebarProps {
+interface MobileMenuContextValue {
   open: boolean;
-  onClose: () => void;
+  openMenu: () => void;
+  closeMenu: () => void;
+}
+
+const MobileMenuContext = React.createContext<MobileMenuContextValue>({
+  open: false,
+  openMenu: () => {},
+  closeMenu: () => {},
+});
+
+function MobileMenuProvider({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const openMenu = useCallback(() => setOpen(true), []);
+  const closeMenu = useCallback(() => setOpen(false), []);
+  const value = useMemo(() => ({ open, openMenu, closeMenu }), [open, openMenu, closeMenu]);
+  return <MobileMenuContext.Provider value={value}>{children}</MobileMenuContext.Provider>;
 }
 
 const MobileDrawer = React.memo(function MobileDrawer({
-  open,
-  onClose,
   visibleNav,
   activePage,
   onSelectNav,
   profile,
   onLogout,
-}: MobileDrawerProps) {
+}: SidebarProps) {
+  const { open, closeMenu: onClose } = React.useContext(MobileMenuContext);
   const shouldReduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -172,162 +186,110 @@ const MobileDrawer = React.memo(function MobileDrawer({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onClose]);
 
-  if (shouldReduceMotion) {
-    if (!open) return null;
-    return (
-      <div className="no-print fixed inset-0 z-50 lg:hidden flex">
-        <div className="fixed inset-0 bg-slate-900/40" onClick={onClose} />
-        <aside className="relative w-72 max-w-[85vw] bg-white h-full flex flex-col border-r border-slate-200 z-10">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <BrandLogo size="sm" />
-              <span className="text-sm font-bold text-slate-900">Apotek Andhika Farma</span>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 text-slate-500 hover:text-slate-900 rounded-lg"
-              aria-label="Tutup menu"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <nav data-lenis-prevent className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-            {visibleNav.map((item) => {
-              const Icon = item.icon;
-              const isActive = activePage === item.key;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => onSelectNav(item.key)}
-                  className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                    isActive ? 'bg-sky-50 text-sky-700' : 'text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <Icon
-                    className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-600' : 'text-slate-400'}`}
-                  />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-          <div className="p-4 border-t border-slate-100">
-            <p className="text-xs font-semibold text-slate-900 truncate">{profile?.fullName}</p>
-            <p className="text-xs text-slate-500 truncate">
-              {profile?.role === 'admin' ? 'Admin' : 'Petugas / Apoteker'}
-            </p>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Keluar</span>
-            </button>
-          </div>
-        </aside>
-      </div>
-    );
-  }
-
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          className="no-print fixed inset-0 z-50 lg:hidden flex"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1, transition: { duration: 0.16 } }}
-          exit={{ opacity: 0, transition: { duration: 0.14 } }}
-        >
-          <div
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px]"
+    <div
+      aria-hidden={!open}
+      className={`no-print fixed inset-0 z-50 lg:hidden flex ${
+        open ? 'pointer-events-auto visible' : 'pointer-events-none invisible'
+      }`}
+      style={{
+        transition: shouldReduceMotion
+          ? undefined
+          : open
+            ? 'visibility 0s linear 0s'
+            : 'visibility 0s linear 200ms',
+      }}
+    >
+      <div
+        onClick={onClose}
+        aria-hidden="true"
+        className={`fixed inset-0 bg-slate-900/45 touch-none ${
+          shouldReduceMotion ? '' : 'transition-opacity duration-200 ease-out will-change-[opacity]'
+        } ${open ? 'opacity-100' : 'opacity-0'}`}
+      />
+      <aside
+        role="dialog"
+        aria-modal={open}
+        aria-label="Menu navigasi"
+        className={`relative w-72 max-w-[85vw] bg-white h-full flex flex-col border-r border-slate-200 z-10 shadow-lg overscroll-contain transform-gpu [contain:layout_paint] ${
+          shouldReduceMotion
+            ? ''
+            : 'transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform'
+        } ${open ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <BrandLogo size="sm" />
+            <span className="text-sm font-bold text-slate-900">Apotek Andhika Farma</span>
+          </div>
+          <button
+            type="button"
             onClick={onClose}
-            aria-hidden="true"
-          />
-          <motion.aside
-            className="relative w-72 max-w-[85vw] bg-white h-full flex flex-col border-r border-slate-200 z-10 shadow-xl"
-            initial={{ x: '-100%' }}
-            animate={{ x: 0, transition: { duration: 0.22, ease: DRAWER_EASE } }}
-            exit={{ x: '-100%', transition: { duration: 0.16, ease: 'easeIn' } }}
+            className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
+            aria-label="Tutup menu"
           >
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <BrandLogo size="sm" />
-                <span className="text-sm font-bold text-slate-900">Apotek Andhika Farma</span>
-              </div>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <nav data-lenis-prevent className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overscroll-contain">
+          {visibleNav.map((item) => {
+            const Icon = item.icon;
+            const isActive = activePage === item.key;
+            return (
               <button
+                key={item.key}
                 type="button"
-                onClick={onClose}
-                className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
-                aria-label="Tutup menu"
+                onClick={() => onSelectNav(item.key)}
+                className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  isActive ? 'bg-sky-50 text-sky-700' : 'text-slate-700 hover:bg-slate-50'
+                }`}
               >
-                <X className="w-5 h-5" />
+                <Icon
+                  className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-600' : 'text-slate-400'}`}
+                />
+                <span>{item.label}</span>
               </button>
-            </div>
-            <nav data-lenis-prevent className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-              {visibleNav.map((item) => {
-                const Icon = item.icon;
-                const isActive = activePage === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => onSelectNav(item.key)}
-                    className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                      isActive ? 'bg-sky-50 text-sky-700' : 'text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Icon
-                      className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-600' : 'text-slate-400'}`}
-                    />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-            <div className="p-4 border-t border-slate-100">
-              <p className="text-xs font-semibold text-slate-900 truncate">{profile?.fullName}</p>
-              <p className="text-xs text-slate-500 truncate">
-                {profile?.role === 'admin' ? 'Admin' : 'Petugas / Apoteker'}
-              </p>
-              <button
-                type="button"
-                onClick={onLogout}
-                className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Keluar</span>
-              </button>
-            </div>
-          </motion.aside>
-        </motion.div>
-      )}
-    </AnimatePresence>
+            );
+          })}
+        </nav>
+        <div className="p-4 border-t border-slate-100">
+          <p className="text-xs font-semibold text-slate-900 truncate">{profile?.fullName}</p>
+          <p className="text-xs text-slate-500 truncate">
+            {profile?.role === 'admin' ? 'Admin' : 'Petugas / Apoteker'}
+          </p>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Keluar</span>
+          </button>
+        </div>
+      </aside>
+    </div>
   );
 });
 
 interface TopBarProps {
   pageTitle: string;
   unreadNotifications: number;
-  onOpenMobileMenu: () => void;
   onOpenNotifications: () => void;
 }
 
 const TopBar = React.memo(function TopBar({
   pageTitle,
   unreadNotifications,
-  onOpenMobileMenu,
   onOpenNotifications,
 }: TopBarProps) {
+  const { openMenu: onOpenMobileMenu } = React.useContext(MobileMenuContext);
   return (
-    <header className="no-print sticky top-0 z-20 bg-white/95 backdrop-blur-xs border-b border-slate-200 px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
+    <header className="no-print sticky top-0 z-20 bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
       <div className="flex items-center gap-3 min-w-0">
         <button
           type="button"
           onClick={onOpenMobileMenu}
-          className="lg:hidden p-2 -ml-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
+          className="lg:hidden p-2 -ml-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer touch-manipulation"
           aria-label="Buka menu navigasi"
         >
           <Menu className="w-5 h-5" />
@@ -489,14 +451,14 @@ const NotificationDrawer = React.memo(function NotificationDrawer({
           exit={{ opacity: 0, transition: { duration: 0.14 } }}
         >
           <div
-            className="fixed inset-0 bg-slate-900/30 backdrop-blur-[1px]"
+            className="fixed inset-0 bg-slate-900/35 touch-none"
             onClick={onClose}
             aria-hidden="true"
           />
           <motion.div
             role="dialog"
             aria-modal="true"
-            className="relative w-full max-w-md bg-white h-full border-l border-slate-200 flex flex-col z-10 shadow-xl"
+            className="relative w-full max-w-md bg-white h-full border-l border-slate-200 flex flex-col z-10 shadow-xl will-change-transform"
             initial={{ x: '100%' }}
             animate={{ x: 0, transition: { duration: 0.22, ease: DRAWER_EASE } }}
             exit={{ x: '100%', transition: { duration: 0.16, ease: 'easeIn' } }}
@@ -516,9 +478,40 @@ interface AppLayoutProps {
   children: React.ReactNode;
 }
 
+const MobileNavSelectWrapper = React.memo(function MobileNavSelectWrapper({
+  visibleNav,
+  activePage,
+  onNavigate,
+  profile,
+  onLogout,
+}: {
+  visibleNav: NavItemConfig[];
+  activePage: PageKey;
+  onNavigate: (key: PageKey) => void;
+  profile: UserProfile | null;
+  onLogout: () => Promise<void>;
+}) {
+  const { closeMenu } = React.useContext(MobileMenuContext);
+  const handleSelect = useCallback(
+    (key: PageKey) => {
+      onNavigate(key);
+      closeMenu();
+    },
+    [onNavigate, closeMenu],
+  );
+  return (
+    <MobileDrawer
+      visibleNav={visibleNav}
+      activePage={activePage}
+      onSelectNav={handleSelect}
+      profile={profile}
+      onLogout={onLogout}
+    />
+  );
+});
+
 export function AppLayout({ activePage, onNavigate, onPrefetchPage, children }: AppLayoutProps) {
   const { profile, unreadNotifications, logout, refreshProfile, getCached, apiFetch } = useAuth();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifList, setNotifList] = useState<NotificationItem[]>([]);
   const [loadingNotif, setLoadingNotif] = useState(false);
@@ -574,60 +567,48 @@ export function AppLayout({ activePage, onNavigate, onPrefetchPage, children }: 
     }
   }, [apiFetch, refreshProfile]);
 
-  const handleSelectNav = useCallback(
-    (key: PageKey) => {
-      onNavigate(key);
-      setMobileMenuOpen(false);
-    },
-    [onNavigate],
-  );
-
-  const openMobileMenu = useCallback(() => setMobileMenuOpen(true), []);
-  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
-
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <DesktopSidebar
-        visibleNav={visibleNav}
-        activePage={activePage}
-        onSelectNav={handleSelectNav}
-        onPrefetchNav={onPrefetchPage}
-        profile={profile}
-        onLogout={logout}
-      />
-
-      <MobileDrawer
-        open={mobileMenuOpen}
-        onClose={closeMobileMenu}
-        visibleNav={visibleNav}
-        activePage={activePage}
-        onSelectNav={handleSelectNav}
-        profile={profile}
-        onLogout={logout}
-      />
-
-      {/* Main Content Area */}
-      <div className="flex-1 lg:pl-64 print:pl-0 flex flex-col min-w-0">
-        <TopBar
-          pageTitle={PAGE_TITLE_MAP[activePage]}
-          unreadNotifications={unreadNotifications}
-          onOpenMobileMenu={openMobileMenu}
-          onOpenNotifications={openNotifications}
+    <MobileMenuProvider>
+      <div className="min-h-screen bg-slate-50 flex">
+        <DesktopSidebar
+          visibleNav={visibleNav}
+          activePage={activePage}
+          onSelectNav={onNavigate}
+          onPrefetchNav={onPrefetchPage}
+          profile={profile}
+          onLogout={logout}
         />
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1440px] w-full mx-auto overflow-x-clip">
-          {children}
-        </main>
-      </div>
+        <MobileNavSelectWrapper
+          visibleNav={visibleNav}
+          activePage={activePage}
+          onNavigate={onNavigate}
+          profile={profile}
+          onLogout={logout}
+        />
 
-      <NotificationDrawer
-        open={notifOpen}
-        loading={loadingNotif}
-        notifList={notifList}
-        onClose={closeNotifications}
-        onMarkRead={markRead}
-        onMarkAllRead={markAllRead}
-      />
-    </div>
+        {/* Main Content Area */}
+        <div className="flex-1 lg:pl-64 print:pl-0 flex flex-col min-w-0">
+          <TopBar
+            pageTitle={PAGE_TITLE_MAP[activePage]}
+            unreadNotifications={unreadNotifications}
+            onOpenNotifications={openNotifications}
+          />
+
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1440px] w-full mx-auto overflow-x-clip">
+            {children}
+          </main>
+        </div>
+
+        <NotificationDrawer
+          open={notifOpen}
+          loading={loadingNotif}
+          notifList={notifList}
+          onClose={closeNotifications}
+          onMarkRead={markRead}
+          onMarkAllRead={markAllRead}
+        />
+      </div>
+    </MobileMenuProvider>
   );
 }
