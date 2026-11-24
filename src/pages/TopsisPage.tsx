@@ -15,6 +15,9 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { exportToExcel, formatDate, formatDateTime, formatNumber, formatRupiah } from '../lib/format';
 import { TopsisAlternativeResult } from '../lib/topsis';
+import { AnimatedHeading } from '../components/AnimatedHeading';
+import { MotionCard } from '../components/MotionCard';
+import { useSmoothScroll } from '../components/SmoothScrollProvider';
 
 type TopsisTab = 'analyze' | 'results' | 'history';
 
@@ -77,6 +80,7 @@ interface TopsisRunDetail {
 
 export function TopsisPage() {
   const { apiFetch, profile } = useAuth();
+  const { refreshScrollTriggers } = useSmoothScroll();
   const isAdmin = profile?.role === 'admin';
 
   const [activeTab, setActiveTab] = useState<TopsisTab>('analyze');
@@ -183,6 +187,10 @@ export function TopsisPage() {
     loadCriteria();
     loadRuns(true);
   }, [loadCriteria, loadRuns]);
+
+  useEffect(() => {
+    refreshScrollTriggers();
+  }, [activeTab, activeDetail, refreshScrollTriggers]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -336,9 +344,11 @@ export function TopsisPage() {
       {/* Header & Tabs */}
       <div className="no-print flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Penentuan Prioritas Pengadaan Obat pada Apotek Andhika Farma Menggunakan Metode TOPSIS
-          </h1>
+          <AnimatedHeading
+            as="h1"
+            text="Penentuan Prioritas Pengadaan Obat pada Apotek Andhika Farma Menggunakan Metode TOPSIS"
+            className="text-xl font-bold text-slate-900 tracking-tight"
+          />
           <p className="text-xs text-slate-500 mt-0.5">
             Sistem Pendukung Keputusan multi-kriteria dengan transparansi penuh 8 tahapan perhitungan
             matriks TOPSIS.
@@ -408,12 +418,14 @@ export function TopsisPage() {
       {activeTab === 'analyze' && (
         <div className="space-y-6">
           {/* Criteria & Weights Panel */}
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <MotionCard index={0} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h2 className="text-sm font-bold text-slate-900">
-                  Kriteria &amp; Pembobotan TOPSIS
-                </h2>
+                <AnimatedHeading
+                  as="h2"
+                  text="Kriteria & Pembobotan TOPSIS"
+                  className="text-sm font-bold text-slate-900"
+                />
                 <p className="text-xs text-slate-500">
                   {isAdmin
                     ? 'Sebagai Admin, Anda dapat menyesuaikan bobot kepentingan kriteria K1–K5.'
@@ -479,10 +491,10 @@ export function TopsisPage() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </MotionCard>
 
           {/* Analysis Period & Candidate Selection */}
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <MotionCard index={1} hoverLift={false} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
             <div className="p-5 border-b border-slate-100 space-y-4">
               <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 text-xs">
@@ -689,7 +701,7 @@ export function TopsisPage() {
               * Harga beli bernilai 0 pada PDF awal diestimasi 78% dari harga jual agar penilaian K5
               tetap akurat. Anda dapat mengubah skor 1–5 secara langsung sebelum menghitung TOPSIS.
             </div>
-          </div>
+          </MotionCard>
         </div>
       )}
 
@@ -712,14 +724,16 @@ export function TopsisPage() {
           ) : (
             <>
               {/* Summary Bar + Print/Export */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <MotionCard index={0} className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold text-sky-700 uppercase tracking-wider">
                     Hasil Perhitungan TOPSIS #{activeDetail.run.id}
                   </p>
-                  <h2 className="text-base font-bold text-slate-900 mt-0.5">
-                    {activeDetail.run.title}
-                  </h2>
+                  <AnimatedHeading
+                    as="h2"
+                    text={activeDetail.run.title}
+                    className="text-base font-bold text-slate-900 mt-0.5"
+                  />
                   <p className="text-xs text-slate-500 mt-1">
                     Periode: {formatDate(activeDetail.run.periodStart)} s/d{' '}
                     {formatDate(activeDetail.run.periodEnd)} · Oleh:{' '}
@@ -745,15 +759,16 @@ export function TopsisPage() {
                     <span>Ekspor Excel</span>
                   </button>
                 </div>
-              </div>
+              </MotionCard>
 
               {/* Tahap 7 & 8: Nilai Preferensi & Ranking Prioritas */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <MotionCard index={1} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-5 py-3.5 border-b border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Tahap 6, 7 &amp; 8: Jarak Ideal (D+ / D-), Nilai Preferensi (V) &amp; Ranking
-                    Prioritas Pengadaan
-                  </h3>
+                  <AnimatedHeading
+                    as="h3"
+                    text="Tahap 6, 7 & 8: Jarak Ideal (D+ / D-), Nilai Preferensi (V) & Ranking Prioritas Pengadaan"
+                    className="text-sm font-bold text-slate-900"
+                  />
                   <p className="text-xs text-slate-500">
                     Diurutkan dari nilai preferensi (V = D- / (D+ + D-)) tertinggi ke terendah.
                   </p>
@@ -798,14 +813,16 @@ export function TopsisPage() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </MotionCard>
 
               {/* Tahap 1: Matriks Keputusan (X) */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <MotionCard index={2} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-5 py-3.5 border-b border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Tahap 1: Matriks Keputusan (X) — Data Aktual &amp; Konversi Skor 1–5
-                  </h3>
+                  <AnimatedHeading
+                    as="h3"
+                    text="Tahap 1: Matriks Keputusan (X) — Data Aktual & Konversi Skor 1–5"
+                    className="text-sm font-bold text-slate-900"
+                  />
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
@@ -847,15 +864,16 @@ export function TopsisPage() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </MotionCard>
 
               {/* Tahap 2: Matriks Normalisasi (R) */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <MotionCard index={3} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-5 py-3.5 border-b border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Tahap 2: Matriks Normalisasi (R) — r<sub>ij</sub> = x<sub>ij</sub> / &radic;&Sigma;x
-                    <sub>ij</sub>&sup2;
-                  </h3>
+                  <AnimatedHeading
+                    as="h3"
+                    text="Tahap 2: Matriks Normalisasi (R) — r(ij) = x(ij) / √Σx(ij)²"
+                    className="text-sm font-bold text-slate-900"
+                  />
                   <p className="text-xs text-slate-500 mt-0.5 font-mono tabular-nums">
                     Pembagi: K1={Number(activeDetail.divisors.K1 ?? 0).toFixed(4)} · K2=
                     {Number(activeDetail.divisors.K2 ?? 0).toFixed(4)} · K3=
@@ -892,15 +910,16 @@ export function TopsisPage() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </MotionCard>
 
               {/* Tahap 3, 4 & 5: Matriks Terbobot (Y) + A+ & A- */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <MotionCard index={4} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-5 py-3.5 border-b border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Tahap 3, 4 &amp; 5: Matriks Normalisasi Terbobot (Y) serta Solusi Ideal Positif
-                    (A+) &amp; Negatif (A-)
-                  </h3>
+                  <AnimatedHeading
+                    as="h3"
+                    text="Tahap 3, 4 & 5: Matriks Normalisasi Terbobot (Y) serta Solusi Ideal Positif (A+) & Negatif (A-)"
+                    className="text-sm font-bold text-slate-900"
+                  />
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
@@ -966,7 +985,7 @@ export function TopsisPage() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </MotionCard>
             </>
           )}
         </div>
@@ -974,9 +993,13 @@ export function TopsisPage() {
 
       {/* ==================== TAB 3: RIWAYAT PERHITUNGAN ==================== */}
       {activeTab === 'history' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <MotionCard index={0} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="text-sm font-bold text-slate-900">Riwayat Perhitungan TOPSIS</h2>
+            <AnimatedHeading
+              as="h2"
+              text="Riwayat Perhitungan TOPSIS"
+              className="text-sm font-bold text-slate-900"
+            />
             <p className="text-xs text-slate-500">
               Pilih salah satu riwayat untuk melihat seluruh 8 tahap matriks dan mencetak hasil.
             </p>
@@ -1042,7 +1065,7 @@ export function TopsisPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </MotionCard>
       )}
 
       {deleteRunTarget && (

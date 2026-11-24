@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Printer, FileSpreadsheet, Search, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { exportToExcel, formatDate, formatDateTime, formatNumber, formatRupiah } from '../lib/format';
+import { AnimatedHeading } from '../components/AnimatedHeading';
+import { MotionCard } from '../components/MotionCard';
 
 type ReportType = 'medicines' | 'stock_in' | 'stock_out' | 'low_stock' | 'expiring' | 'topsis';
 
@@ -86,9 +88,11 @@ export function ReportsPage() {
       {/* Header */}
       <div className="no-print flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Pusat Laporan Apotek Andhika Farma
-          </h1>
+          <AnimatedHeading
+            as="h1"
+            text="Pusat Laporan Apotek Andhika Farma"
+            className="text-xl font-bold text-slate-900 tracking-tight"
+          />
           <p className="text-xs text-slate-500 mt-0.5">
             Ekspor dan cetak PDF untuk laporan persediaan obat, pergerakan stok, batch kedaluwarsa,
             dan hasil ranking TOPSIS.
@@ -135,7 +139,7 @@ export function ReportsPage() {
       </div>
 
       {/* Filters */}
-      <div className="no-print bg-white border border-slate-200 rounded-xl p-4 flex flex-col lg:flex-row lg:items-center gap-3 text-xs">
+      <MotionCard index={0} hoverLift={false} className="no-print bg-white border border-slate-200 rounded-xl p-4 flex flex-col lg:flex-row lg:items-center gap-3 text-xs">
         <div className="relative flex-1 max-w-xs">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -187,7 +191,7 @@ export function ReportsPage() {
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>Muat Ulang</span>
         </button>
-      </div>
+      </MotionCard>
 
       {error && (
         <div className="px-4 py-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
@@ -196,11 +200,13 @@ export function ReportsPage() {
       )}
 
       {/* Report Table */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <MotionCard index={1} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-slate-900">
-            Laporan {reportTabs.find((t) => t.key === reportType)?.label}
-          </h2>
+          <AnimatedHeading
+            as="h2"
+            text={`Laporan ${reportTabs.find((t) => t.key === reportType)?.label ?? ''}`}
+            className="text-sm font-bold text-slate-900"
+          />
           <span className="text-xs text-slate-500 tabular-nums">
             Total {formatNumber(rows.length, 0)} baris
           </span>
@@ -356,7 +362,7 @@ export function ReportsPage() {
             untuk mengunduh seluruh {formatNumber(rows.length, 0)} baris data.
           </div>
         )}
-      </div>
+      </MotionCard>
     </div>
   );
 }

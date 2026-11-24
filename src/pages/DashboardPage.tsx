@@ -14,6 +14,9 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatDateTime, formatNumber } from '../lib/format';
 import { PageKey } from '../components/AppLayout';
+import { AnimatedHeading } from '../components/AnimatedHeading';
+import { MotionCard } from '../components/MotionCard';
+import { useSmoothScroll } from '../components/SmoothScrollProvider';
 
 interface DashboardData {
   stats: {
@@ -82,6 +85,7 @@ interface DashboardPageProps {
 
 export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const { apiFetch } = useAuth();
+  const { refreshScrollTriggers } = useSmoothScroll();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +107,12 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    if (data) {
+      refreshScrollTriggers();
+    }
+  }, [data, refreshScrollTriggers]);
 
   if (loading && !data) {
     return (
@@ -206,9 +216,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Ringkasan Operasional Apotek Andhika Farma
-          </h1>
+          <AnimatedHeading
+            as="h1"
+            text="Ringkasan Operasional Apotek Andhika Farma"
+            className="text-xl font-bold text-slate-900 tracking-tight"
+          />
           <p className="text-xs text-slate-500 mt-0.5">
             Pemantauan persediaan obat FEFO real-time dan rekomendasi prioritas pengadaan TOPSIS.
           </p>
@@ -236,14 +248,15 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
 
       {/* 6 KPI Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        {kpiCards.map((card) => {
+        {kpiCards.map((card, idx) => {
           const Icon = card.icon;
           return (
-            <button
+            <MotionCard
               key={card.label}
-              type="button"
+              as="button"
+              index={idx}
               onClick={card.onClick}
-              className="text-left bg-white border border-slate-200 hover:border-sky-300 rounded-xl p-4 transition-colors cursor-pointer"
+              className="text-left bg-white border border-slate-200 hover:border-sky-300 rounded-xl p-4 cursor-pointer"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-slate-500 truncate">{card.label}</span>
@@ -251,7 +264,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
               </div>
               <p className="text-2xl font-bold text-slate-900 mt-2 tabular-nums">{card.value}</p>
               <p className="text-xs text-slate-500 mt-1 truncate">{card.sub}</p>
-            </button>
+            </MotionCard>
           );
         })}
       </div>
@@ -259,12 +272,14 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
       {/* Interactive Stock In/Out Chart + Urgent List */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Chart 2 cols */}
-        <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-5">
+        <MotionCard index={0} className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-4 border-b border-slate-100">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">
-                Grafik Pergerakan Stok Masuk &amp; Keluar (14 Hari Terakhir)
-              </h2>
+              <AnimatedHeading
+                as="h2"
+                text="Grafik Pergerakan Stok Masuk & Keluar (14 Hari Terakhir)"
+                className="text-sm font-bold text-slate-900"
+              />
               <p className="text-xs text-slate-500 mt-0.5">
                 Arahkan kursor pada batang grafik untuk melihat rincian jumlah harian.
               </p>
@@ -378,13 +393,17 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
               </div>
             )}
           </div>
-        </div>
+        </MotionCard>
 
         {/* Urgent Medicines 1 col */}
-        <div className="bg-white border border-slate-200 rounded-xl flex flex-col">
+        <MotionCard index={1} className="bg-white border border-slate-200 rounded-xl flex flex-col">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Perlu Perhatian Segera</h2>
+              <AnimatedHeading
+                as="h2"
+                text="Perlu Perhatian Segera"
+                className="text-sm font-bold text-slate-900"
+              />
               <p className="text-xs text-slate-500">Stok kritis atau mendekati kedaluwarsa</p>
             </div>
             <button
@@ -428,16 +447,20 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
               ))
             )}
           </div>
-        </div>
+        </MotionCard>
       </div>
 
       {/* Bottom Grid: Recent Activities + Latest TOPSIS Top 5 */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Recent Stock Movements */}
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <MotionCard index={0} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Aktivitas Mutasi Stok Terbaru</h2>
+              <AnimatedHeading
+                as="h2"
+                text="Aktivitas Mutasi Stok Terbaru"
+                className="text-sm font-bold text-slate-900"
+              />
               <p className="text-xs text-slate-500">8 transaksi keluar/masuk terakhir</p>
             </div>
             <button
@@ -498,15 +521,17 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
               })
             )}
           </div>
-        </div>
+        </MotionCard>
 
         {/* Latest TOPSIS Priorities */}
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <MotionCard index={1} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <h2 className="text-sm font-bold text-slate-900 truncate">
-                Top 5 Prioritas Pengadaan TOPSIS Terbaru
-              </h2>
+              <AnimatedHeading
+                as="h2"
+                text="Top 5 Prioritas Pengadaan TOPSIS Terbaru"
+                className="text-sm font-bold text-slate-900"
+              />
               <p className="text-xs text-slate-500 truncate">
                 {data.latestTopsisRun
                   ? `${data.latestTopsisRun.title} (${formatDate(data.latestTopsisRun.periodStart)} – ${formatDate(data.latestTopsisRun.periodEnd)})`
@@ -562,7 +587,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
               </tbody>
             </table>
           </div>
-        </div>
+        </MotionCard>
       </div>
     </div>
   );

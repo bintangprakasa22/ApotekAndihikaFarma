@@ -1,5 +1,8 @@
 import { ShieldCheck, PackageCheck, BarChart3, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { BrandLogo } from './BrandLogo';
+import { AnimatedHeading } from './AnimatedHeading';
+import { MotionCard } from './MotionCard';
 
 export function LoginView() {
   const { signInWithGoogle, signingIn, authError } = useAuth();
@@ -7,14 +10,19 @@ export function LoginView() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-xl p-8 flex flex-col justify-between">
+        <MotionCard
+          index={0}
+          className="lg:col-span-7 bg-white border border-slate-200 rounded-xl p-8 flex flex-col justify-between"
+        >
           <div>
             <p className="text-xs font-medium text-sky-700 tracking-wide">
               Apotek Andhika Farma · Sistem Informasi Farmasi
             </p>
-            <h1 className="mt-3 text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-snug text-balance">
-              Manajemen Stok Obat &amp; Prioritas Pengadaan Metode TOPSIS
-            </h1>
+            <AnimatedHeading
+              as="h1"
+              text="Manajemen Stok Obat & Prioritas Pengadaan Metode TOPSIS"
+              className="mt-3 text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight leading-snug text-balance"
+            />
             <p className="mt-4 text-sm text-slate-600 leading-relaxed">
               Platform terpadu untuk pencatatan inventori obat berbasis batch kedaluwarsa (FEFO) dan
               penentuan prioritas pengadaan obat secara objektif berdasarkan lima kriteria penelitian.
@@ -54,14 +62,20 @@ export function LoginView() {
           <div className="mt-8 pt-4 border-t border-slate-100 text-xs text-slate-500">
             Data Master Obat Apotek Andhika Farma · PostgreSQL &amp; Autentikasi Terverifikasi
           </div>
-        </div>
+        </MotionCard>
 
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-8 flex flex-col justify-center">
+        <MotionCard
+          index={1}
+          className="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-8 flex flex-col justify-center"
+        >
           <div className="mb-6">
-            <div className="w-11 h-11 rounded-lg bg-sky-600 text-white flex items-center justify-center font-bold text-lg">
-              AF
-            </div>
-            <h2 className="mt-4 text-xl font-bold text-slate-900">Masuk ke Sistem</h2>
+            <BrandLogo size="lg" />
+            <AnimatedHeading
+              as="h2"
+              text="Masuk ke Sistem"
+              delay={0.12}
+              className="mt-4 text-xl font-bold text-slate-900"
+            />
             <p className="mt-1.5 text-sm text-slate-600">
               Gunakan akun Google Anda untuk mengakses dashboard apotek sesuai role yang terdaftar.
             </p>
@@ -106,7 +120,7 @@ export function LoginView() {
             <p>Admin · Akses penuh, kelola pengguna, ubah bobot TOPSIS, laporan.</p>
             <p>Petugas / Apoteker · Operasional obat, stok FEFO, eksekusi TOPSIS &amp; laporan.</p>
           </div>
-        </div>
+        </MotionCard>
       </div>
     </div>
   );

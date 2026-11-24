@@ -3,10 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { MotionConfig } from 'motion/react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginView } from './components/LoginView';
 import { AppLayout, PageKey } from './components/AppLayout';
+import { BrandLogo } from './components/BrandLogo';
+import { SmoothScrollProvider, useSmoothScroll } from './components/SmoothScrollProvider';
 import { DashboardPage } from './pages/DashboardPage';
 import { MasterDataPage } from './pages/MasterDataPage';
 import { StockManagementPage } from './pages/StockManagementPage';
@@ -17,13 +20,17 @@ import { AdminSettingsPage } from './pages/AdminSettingsPage';
 function MainAppRouter() {
   const { profile, loading } = useAuth();
   const [activePage, setActivePage] = useState<PageKey>('dashboard');
+  const { scrollToTop, refreshScrollTriggers } = useSmoothScroll();
+
+  useEffect(() => {
+    scrollToTop(true);
+    refreshScrollTriggers();
+  }, [activePage, profile?.uid, scrollToTop, refreshScrollTriggers]);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-10 h-10 rounded-xl bg-sky-600 text-white flex items-center justify-center font-bold text-sm mb-3">
-          AF
-        </div>
+        <BrandLogo size="lg" className="mb-3 shadow-sm" />
         <p className="text-sm font-semibold text-slate-800">Apotek Andhika Farma</p>
         <p className="text-xs text-slate-500 mt-1">Memverifikasi sesi dan menyiapkan sistem...</p>
       </div>
@@ -51,8 +58,12 @@ function MainAppRouter() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <MainAppRouter />
-    </AuthProvider>
+    <MotionConfig reducedMotion="user">
+      <SmoothScrollProvider>
+        <AuthProvider>
+          <MainAppRouter />
+        </AuthProvider>
+      </SmoothScrollProvider>
+    </MotionConfig>
   );
 }

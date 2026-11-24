@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatNumber, formatRupiah } from '../lib/format';
+import { AnimatedHeading } from '../components/AnimatedHeading';
+import { MotionCard } from '../components/MotionCard';
 
 type MasterTab = 'medicines' | 'categories' | 'suppliers';
 
@@ -393,7 +395,11 @@ export function MasterDataPage() {
       {/* Header & Sub-tabs */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Manajemen Master Data</h1>
+          <AnimatedHeading
+            as="h1"
+            text="Manajemen Master Data"
+            className="text-xl font-bold text-slate-900 tracking-tight"
+          />
           <p className="text-xs text-slate-500 mt-0.5">
             Pengelolaan data obat Apotek Andhika Farma, kategori farmasi, serta daftar supplier PBF.
           </p>
@@ -440,7 +446,7 @@ export function MasterDataPage() {
 
       {/* ==================== TAB OBAT ==================== */}
       {activeTab === 'medicines' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <MotionCard index={0} hoverLift={false} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           {/* Toolbar */}
           <div className="p-4 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div className="flex flex-col sm:flex-row gap-2.5 flex-1">
@@ -632,12 +638,12 @@ export function MasterDataPage() {
               </button>
             </div>
           </div>
-        </div>
+        </MotionCard>
       )}
 
       {/* ==================== TAB KATEGORI ==================== */}
       {activeTab === 'categories' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <MotionCard index={0} hoverLift={false} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="relative max-w-sm flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -710,12 +716,12 @@ export function MasterDataPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </MotionCard>
       )}
 
       {/* ==================== TAB SUPPLIER ==================== */}
       {activeTab === 'suppliers' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <MotionCard index={0} hoverLift={false} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="relative max-w-sm flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -801,7 +807,7 @@ export function MasterDataPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </MotionCard>
       )}
 
       {/* ==================== MODAL OBAT ==================== */}

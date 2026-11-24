@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { UserPlus, ShieldCheck, Activity, X } from 'lucide-react';
 import { useAuth, UserProfile, UserRole } from '../context/AuthContext';
 import { formatDateTime } from '../lib/format';
+import { AnimatedHeading } from '../components/AnimatedHeading';
+import { MotionCard } from '../components/MotionCard';
+import { useSmoothScroll } from '../components/SmoothScrollProvider';
 
 interface AuditLogRow {
   id: number;
@@ -16,6 +19,7 @@ interface AuditLogRow {
 
 export function AdminSettingsPage() {
   const { apiFetch, profile } = useAuth();
+  const { refreshScrollTriggers } = useSmoothScroll();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [logs, setLogs] = useState<AuditLogRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +55,12 @@ export function AdminSettingsPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!loading) {
+      refreshScrollTriggers();
+    }
+  }, [loading, refreshScrollTriggers]);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,9 +109,11 @@ export function AdminSettingsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Manajemen Pengguna &amp; Audit Log
-          </h1>
+          <AnimatedHeading
+            as="h1"
+            text="Manajemen Pengguna & Audit Log"
+            className="text-xl font-bold text-slate-900 tracking-tight"
+          />
           <p className="text-xs text-slate-500 mt-0.5">
             Pengaturan akun Admin dan Petugas/Apoteker serta catatan jejak aktivitas sistem.
           </p>
@@ -132,10 +144,14 @@ export function AdminSettingsPage() {
       )}
 
       {/* Users Table */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <MotionCard index={0} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-sky-600" />
-          <h2 className="text-sm font-bold text-slate-900">Daftar Akun &amp; Role Pengguna</h2>
+          <AnimatedHeading
+            as="h2"
+            text="Daftar Akun & Role Pengguna"
+            className="text-sm font-bold text-slate-900"
+          />
         </div>
 
         <div className="overflow-x-auto">
@@ -203,13 +219,17 @@ export function AdminSettingsPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </MotionCard>
 
       {/* Audit Logs */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <MotionCard index={1} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
           <Activity className="w-4 h-4 text-emerald-600" />
-          <h2 className="text-sm font-bold text-slate-900">Audit Log Aktivitas Terbaru</h2>
+          <AnimatedHeading
+            as="h2"
+            text="Audit Log Aktivitas Terbaru"
+            className="text-sm font-bold text-slate-900"
+          />
         </div>
 
         <div className="overflow-x-auto">
@@ -255,7 +275,7 @@ export function AdminSettingsPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </MotionCard>
 
       {/* Invite Modal */}
       {inviteOpen && (

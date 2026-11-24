@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatDateTime, formatNumber, formatRupiah } from '../lib/format';
+import { AnimatedHeading } from '../components/AnimatedHeading';
+import { MotionCard } from '../components/MotionCard';
 
 type StockTab = 'in' | 'out' | 'history' | 'alerts';
 
@@ -342,9 +344,11 @@ export function StockManagementPage() {
       {/* Header & Tabs */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Manajemen Stok &amp; Batch FEFO
-          </h1>
+          <AnimatedHeading
+            as="h1"
+            text="Manajemen Stok & Batch FEFO"
+            className="text-xl font-bold text-slate-900 tracking-tight"
+          />
           <p className="text-xs text-slate-500 mt-0.5">
             Pencatatan stok masuk per batch, pengeluaran otomatis berbasis First Expired First Out
             (FEFO), dan pemantauan stok kritis.
@@ -399,7 +403,7 @@ export function StockManagementPage() {
       {(activeTab === 'in' || activeTab === 'out') && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left: Medicine Picker */}
-          <div className="lg:col-span-5 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden">
+          <MotionCard index={0} hoverLift={false} className="lg:col-span-5 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden">
             <div className="p-4 border-b border-slate-100">
               <p className="text-xs font-bold text-slate-900 mb-2">1. Pilih Obat</p>
               <div className="relative">
@@ -450,11 +454,11 @@ export function StockManagementPage() {
                 );
               })}
             </div>
-          </div>
+          </MotionCard>
 
           {/* Right: Transaction Form + Active FEFO Batches */}
           <div className="lg:col-span-7 space-y-5">
-            <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <MotionCard index={1} hoverLift={false} className="bg-white border border-slate-200 rounded-xl p-5">
               {!selectedMed ? (
                 <div className="py-10 text-center text-xs text-slate-500">
                   Pilih salah satu obat di panel kiri untuk mencatat transaksi{' '}
@@ -680,15 +684,17 @@ export function StockManagementPage() {
                   )}
                 </>
               )}
-            </div>
+            </MotionCard>
 
             {/* Active Batches Preview */}
             {selectedMed && (
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <MotionCard index={2} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-slate-900">
-                    Batch Aktif Obat Terpilih (Urutan Pengeluaran FEFO)
-                  </h3>
+                  <AnimatedHeading
+                    as="h3"
+                    text="Batch Aktif Obat Terpilih (Urutan Pengeluaran FEFO)"
+                    className="text-xs font-bold text-slate-900"
+                  />
                   <span className="text-[11px] text-slate-500 tabular-nums">
                     {selectedBatches.length} batch aktif
                   </span>
@@ -727,7 +733,7 @@ export function StockManagementPage() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </MotionCard>
             )}
           </div>
         </div>
@@ -735,7 +741,7 @@ export function StockManagementPage() {
 
       {/* ==================== TAB RIWAYAT PERGERAKAN ==================== */}
       {activeTab === 'history' && (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <MotionCard index={0} hoverLift={false} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center gap-2.5">
             <div className="relative flex-1 max-w-xs">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -891,7 +897,7 @@ export function StockManagementPage() {
               </button>
             </div>
           </div>
-        </div>
+        </MotionCard>
       )}
 
       {/* ==================== TAB PERINGATAN STOK & ED ==================== */}
@@ -904,14 +910,16 @@ export function StockManagementPage() {
           ) : alerts ? (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               {/* Stok Habis */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <MotionCard index={0} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 bg-rose-50/60">
-                  <h3 className="text-xs font-bold text-rose-800">
-                    Stok Habis ({alerts.outOfStock.length} item)
-                  </h3>
+                  <AnimatedHeading
+                    as="h3"
+                    text={`Stok Habis (${alerts.outOfStock.length} item)`}
+                    className="text-xs font-bold text-rose-800"
+                  />
                   <p className="text-[11px] text-rose-600">Stok fisik 0 — segera lakukan pengadaan</p>
                 </div>
-                <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                <div data-lenis-prevent className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
                   {alerts.outOfStock.length === 0 ? (
                     <p className="p-5 text-xs text-slate-500 text-center">Tidak ada obat stok habis.</p>
                   ) : (
@@ -928,17 +936,19 @@ export function StockManagementPage() {
                     ))
                   )}
                 </div>
-              </div>
+              </MotionCard>
 
               {/* Stok Menipis */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <MotionCard index={1} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 bg-amber-50/60">
-                  <h3 className="text-xs font-bold text-amber-900">
-                    Stok Menipis ({alerts.lowStock.length} item)
-                  </h3>
+                  <AnimatedHeading
+                    as="h3"
+                    text={`Stok Menipis (${alerts.lowStock.length} item)`}
+                    className="text-xs font-bold text-amber-900"
+                  />
                   <p className="text-[11px] text-amber-700">Stok &le; batas minimum</p>
                 </div>
-                <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                <div data-lenis-prevent className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
                   {alerts.lowStock.length === 0 ? (
                     <p className="p-5 text-xs text-slate-500 text-center">Tidak ada obat stok menipis.</p>
                   ) : (
@@ -957,17 +967,19 @@ export function StockManagementPage() {
                     ))
                   )}
                 </div>
-              </div>
+              </MotionCard>
 
               {/* Mendekati Kedaluwarsa */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <MotionCard index={2} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 bg-sky-50/60">
-                  <h3 className="text-xs font-bold text-sky-900">
-                    Batch Mendekati Kedaluwarsa ({alerts.expiringBatches.length})
-                  </h3>
+                  <AnimatedHeading
+                    as="h3"
+                    text={`Batch Mendekati Kedaluwarsa (${alerts.expiringBatches.length})`}
+                    className="text-xs font-bold text-sky-900"
+                  />
                   <p className="text-[11px] text-sky-700">ED &le; 90 hari — prioritaskan pengeluaran FEFO</p>
                 </div>
-                <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                <div data-lenis-prevent className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
                   {alerts.expiringBatches.length === 0 ? (
                     <p className="p-5 text-xs text-slate-500 text-center">
                       Tidak ada batch mendekati kedaluwarsa.
@@ -988,7 +1000,7 @@ export function StockManagementPage() {
                     ))
                   )}
                 </div>
-              </div>
+              </MotionCard>
             </div>
           ) : null}
         </div>

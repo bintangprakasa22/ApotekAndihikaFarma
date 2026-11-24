@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { formatDateTime } from '../lib/format';
+import { BrandLogo } from './BrandLogo';
 
 export type PageKey = 'dashboard' | 'master' | 'stock' | 'topsis' | 'reports' | 'users';
 
@@ -101,11 +102,9 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
     <div className="min-h-screen bg-slate-50 flex">
       {/* Desktop Sidebar */}
       <aside className="no-print hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white border-r border-slate-200 z-30">
-        <div className="px-6 py-5 border-b border-slate-100">
+        <div className="px-5 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-sky-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
-              AF
-            </div>
+            <BrandLogo size="md" />
             <div className="min-w-0">
               <p className="text-sm font-bold text-slate-900 truncate">Apotek Andhika Farma</p>
               <p className="text-xs text-slate-500 truncate">Stok FEFO · SPK TOPSIS</p>
@@ -163,9 +162,7 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
           <aside className="relative w-72 max-w-[85vw] bg-white h-full flex flex-col border-r border-slate-200 z-10">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-sky-600 text-white flex items-center justify-center font-bold text-xs">
-                  AF
-                </div>
+                <BrandLogo size="sm" />
                 <span className="text-sm font-bold text-slate-900">Apotek Andhika Farma</span>
               </div>
               <button
@@ -293,7 +290,7 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+            <div data-lenis-prevent className="flex-1 overflow-y-auto divide-y divide-slate-100">
               {loadingNotif ? (
                 <div className="p-5 space-y-3">
                   {[1, 2, 3, 4].map((i) => (
