@@ -83,12 +83,12 @@ interface DashboardData {
   }[];
 }
 
-const CHART_HEIGHT = 200;
+const CHART_HEIGHT = 256;
 const CHART_WIDTH = 760;
-const PAD_LEFT = 42;
+const PAD_LEFT = 46;
 const PAD_RIGHT = 16;
-const PAD_TOP = 16;
-const PAD_BOTTOM = 32;
+const PAD_TOP = 18;
+const PAD_BOTTOM = 30;
 const PLOT_W = CHART_WIDTH - PAD_LEFT - PAD_RIGHT;
 const PLOT_H = CHART_HEIGHT - PAD_TOP - PAD_BOTTOM;
 const GRID_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
@@ -104,106 +104,166 @@ const DashboardStockChart = React.memo(function DashboardStockChart({
     () => Math.max(10, ...chartData.map((d) => Math.max(d.stockIn, d.stockOut))),
     [chartData],
   );
+  const summary = useMemo(() => {
+    let totalIn = 0;
+    let totalOut = 0;
+    let activeDays = 0;
+    let peak: ChartPoint | null = null;
+    let peakTotal = -1;
+
+    for (const d of chartData) {
+      totalIn += d.stockIn;
+      totalOut += d.stockOut;
+      if (d.stockIn > 0 || d.stockOut > 0) activeDays += 1;
+      const dayTotal = d.stockIn + d.stockOut;
+      if (dayTotal > peakTotal) {
+        peakTotal = dayTotal;
+        peak = d;
+      }
+    }
+
+    const avgOut = activeDays > 0 ? totalOut / activeDays : 0;
+    return { totalIn, totalOut, activeDays, peak, avgOut };
+  }, [chartData]);
+
   const groupW = PLOT_W / Math.max(1, chartData.length);
-  const barW = Math.min(16, Math.max(6, groupW * 0.32));
+  const barW = Math.min(18, Math.max(7, groupW * 0.34));
+  const activePoint = hoveredIdx !== null ? chartData[hoveredIdx] : null;
 
   return (
-    <div className="mt-4 relative overflow-x-auto">
-      <svg
-        viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-        className="w-full min-w-[560px] h-52 select-none"
-      >
-        {GRID_FRACTIONS.map((frac) => {
-          const y = PAD_TOP + PLOT_H * (1 - frac);
-          const labelVal = Math.round(maxVal * frac);
-          return (
-            <g key={frac}>
-              <line
-                x1={PAD_LEFT}
-                y1={y}
-                x2={CHART_WIDTH - PAD_RIGHT}
-                y2={y}
-                stroke="#e2e8f0"
-                strokeDasharray={frac === 0 ? undefined : '3 3'}
-              />
-              <text
-                x={PAD_LEFT - 6}
-                y={y + 3}
-                textAnchor="end"
-                className="fill-slate-400 text-[10px]"
-              >
-                {labelVal}
-              </text>
-            </g>
-          );
-        })}
-
-        {chartData.map((d, idx) => {
-          const xCenter = PAD_LEFT + idx * groupW + groupW / 2;
-          const hIn = (d.stockIn / maxVal) * PLOT_H;
-          const hOut = (d.stockOut / maxVal) * PLOT_H;
-          const isHover = hoveredIdx === idx;
-          const dimmed = hoveredIdx !== null && !isHover;
-          return (
-            <g
-              key={d.date}
-              onMouseEnter={() => setHoveredIdx(idx)}
-              onMouseLeave={() => setHoveredIdx(null)}
-              className="cursor-pointer transition-opacity duration-150"
-              style={{ opacity: dimmed ? 0.45 : 1 }}
-            >
-              {isHover && (
-                <rect
-                  x={PAD_LEFT + idx * groupW + 2}
-                  y={PAD_TOP}
-                  width={groupW - 4}
-                  height={PLOT_H}
-                  fill="#f1f5f9"
-                  rx={4}
+    <div className="mt-3 flex-1 flex flex-col justify-between">
+      <div className="relative overflow-x-auto">
+        <svg
+          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+          className="w-full min-w-[540px] h-60 sm:h-64 select-none"
+        >
+          {GRID_FRACTIONS.map((frac) => {
+            const y = PAD_TOP + PLOT_H * (1 - frac);
+            const labelVal = Math.round(maxVal * frac);
+            return (
+              <g key={frac}>
+                <line
+                  x1={PAD_LEFT}
+                  y1={y}
+                  x2={CHART_WIDTH - PAD_RIGHT}
+                  y2={y}
+                  stroke="#e2e8f0"
+                  strokeDasharray={frac === 0 ? undefined : '3 3'}
                 />
-              )}
-              <rect
-                x={xCenter - barW - 1.5}
-                y={PAD_TOP + PLOT_H - hIn}
-                width={barW}
-                height={Math.max(0, hIn)}
-                rx={3}
-                fill="#10b981"
-              />
-              <rect
-                x={xCenter + 1.5}
-                y={PAD_TOP + PLOT_H - hOut}
-                width={barW}
-                height={Math.max(0, hOut)}
-                rx={3}
-                fill="#0284c7"
-              />
-              <text
-                x={xCenter}
-                y={CHART_HEIGHT - 10}
-                textAnchor="middle"
-                className={`text-[10px] transition-colors duration-150 ${
-                  isHover ? 'fill-slate-900 font-semibold' : 'fill-slate-500'
-                }`}
-              >
-                {idx % 2 === 0 || isHover ? d.label : ''}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+                <text
+                  x={PAD_LEFT - 8}
+                  y={y + 3.5}
+                  textAnchor="end"
+                  className="fill-slate-400 text-[10px] tabular-nums"
+                >
+                  {formatNumber(labelVal, 0)}
+                </text>
+              </g>
+            );
+          })}
 
-      {hoveredIdx !== null && chartData[hoveredIdx] && (
-        <div className="mt-2 px-3 py-2 bg-slate-900 text-white text-xs rounded-lg inline-flex items-center gap-4 tabular-nums">
-          <span className="font-semibold">{chartData[hoveredIdx].label}</span>
-          <span className="text-emerald-300">
-            Masuk: {formatNumber(chartData[hoveredIdx].stockIn, 0)} unit
-          </span>
-          <span className="text-sky-300">
-            Keluar: {formatNumber(chartData[hoveredIdx].stockOut, 0)} unit
-          </span>
+          {chartData.map((d, idx) => {
+            const xCenter = PAD_LEFT + idx * groupW + groupW / 2;
+            const hIn = (d.stockIn / maxVal) * PLOT_H;
+            const hOut = (d.stockOut / maxVal) * PLOT_H;
+            const isHover = hoveredIdx === idx;
+            const dimmed = hoveredIdx !== null && !isHover;
+            return (
+              <g
+                key={d.date}
+                onMouseEnter={() => setHoveredIdx(idx)}
+                onMouseLeave={() => setHoveredIdx(null)}
+                className="cursor-pointer transition-opacity duration-150"
+                style={{ opacity: dimmed ? 0.45 : 1 }}
+              >
+                {isHover && (
+                  <rect
+                    x={PAD_LEFT + idx * groupW + 2}
+                    y={PAD_TOP}
+                    width={groupW - 4}
+                    height={PLOT_H}
+                    fill="#f1f5f9"
+                    rx={4}
+                  />
+                )}
+                <rect
+                  x={xCenter - barW - 1.5}
+                  y={PAD_TOP + PLOT_H - hIn}
+                  width={barW}
+                  height={Math.max(0, hIn)}
+                  rx={3}
+                  fill="#10b981"
+                />
+                <rect
+                  x={xCenter + 1.5}
+                  y={PAD_TOP + PLOT_H - hOut}
+                  width={barW}
+                  height={Math.max(0, hOut)}
+                  rx={3}
+                  fill="#0284c7"
+                />
+                <text
+                  x={xCenter}
+                  y={CHART_HEIGHT - 8}
+                  textAnchor="middle"
+                  className={`text-[10px] transition-colors duration-150 ${
+                    isHover ? 'fill-slate-900 font-semibold' : 'fill-slate-500'
+                  }`}
+                >
+                  {idx % 2 === 0 || isHover ? d.label : ''}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* Reserved detail strip so hover never shifts layout */}
+      <div className="mt-2 min-h-[34px] flex items-center">
+        {activePoint ? (
+          <div className="px-3 py-1.5 bg-slate-900 text-white text-xs rounded-lg inline-flex flex-wrap items-center gap-4 tabular-nums">
+            <span className="font-semibold">{activePoint.label}</span>
+            <span className="text-emerald-300">
+              Masuk: {formatNumber(activePoint.stockIn, 0)} unit
+            </span>
+            <span className="text-sky-300">
+              Keluar: {formatNumber(activePoint.stockOut, 0)} unit
+            </span>
+          </div>
+        ) : (
+          <p className="text-[11px] text-slate-400">
+            Menampilkan {summary.activeDays} hari aktif dalam 14 hari terakhir (termasuk progres laporan stok 20–23 Nov 2026).
+          </p>
+        )}
+      </div>
+
+      {/* Real 14-day summary metrics derived directly from chartData */}
+      <div className="mt-3 pt-3.5 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-3 tabular-nums">
+        <div className="bg-emerald-50/60 border border-emerald-100 rounded-lg px-3 py-2">
+          <p className="text-[11px] font-medium text-emerald-700">Total Masuk (14 Hari)</p>
+          <p className="text-sm font-bold text-slate-900 mt-0.5">
+            {formatNumber(summary.totalIn, 0)} <span className="text-[11px] font-normal text-slate-500">unit</span>
+          </p>
         </div>
-      )}
+        <div className="bg-sky-50/60 border border-sky-100 rounded-lg px-3 py-2">
+          <p className="text-[11px] font-medium text-sky-700">Total Keluar (14 Hari)</p>
+          <p className="text-sm font-bold text-slate-900 mt-0.5">
+            {formatNumber(summary.totalOut, 0)} <span className="text-[11px] font-normal text-slate-500">unit</span>
+          </p>
+        </div>
+        <div className="bg-slate-50 border border-slate-200/70 rounded-lg px-3 py-2">
+          <p className="text-[11px] font-medium text-slate-500">Rata-rata Keluar/Hari</p>
+          <p className="text-sm font-bold text-slate-900 mt-0.5">
+            {formatNumber(summary.avgOut, 0)} <span className="text-[11px] font-normal text-slate-500">unit</span>
+          </p>
+        </div>
+        <div className="bg-slate-50 border border-slate-200/70 rounded-lg px-3 py-2">
+          <p className="text-[11px] font-medium text-slate-500">Puncak Aktivitas</p>
+          <p className="text-sm font-bold text-slate-900 mt-0.5 truncate">
+            {summary.peak ? summary.peak.label : '-'}
+          </p>
+        </div>
+      </div>
     </div>
   );
 });
@@ -237,7 +297,7 @@ const DashboardUrgentList = React.memo(function DashboardUrgentList({
   onManageStock: () => void;
 }) {
   return (
-    <MotionCard index={1} className="bg-white border border-slate-200 rounded-xl flex flex-col">
+    <MotionCard index={1} className="bg-white border border-slate-200 rounded-xl flex flex-col xl:max-h-[465px]">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-2">
         <div>
           <AnimatedHeading
@@ -657,10 +717,10 @@ export function DashboardPage({ onNavigate, isActive = true }: DashboardPageProp
       </div>
 
       {/* Interactive Stock In/Out Chart + Urgent List */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-stretch">
         {/* Chart 2 cols */}
-        <MotionCard index={0} className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-4 border-b border-slate-100">
+        <MotionCard index={0} className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-5 flex flex-col">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-slate-100">
             <div>
               <AnimatedHeading
                 as="h2"
