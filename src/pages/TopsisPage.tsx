@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calculator,
   Printer,
@@ -17,6 +17,9 @@ import { exportToExcel, formatDate, formatDateTime, formatNumber, formatRupiah }
 import { TopsisAlternativeResult } from '../lib/topsis';
 import { AnimatedHeading } from '../components/AnimatedHeading';
 import { MotionCard } from '../components/MotionCard';
+import { MotionModal } from '../components/MotionModal';
+import { TableRowsSkeleton, TopsisDetailSkeleton } from '../components/PageSkeleton';
+import { SegmentedTabs } from '../components/SegmentedTabs';
 import { useSmoothScroll } from '../components/SmoothScrollProvider';
 
 type TopsisTab = 'analyze' | 'results' | 'history';
@@ -78,17 +81,31 @@ interface TopsisRunDetail {
   idealNegative: Record<string, number>;
 }
 
-export function TopsisPage() {
-  const { apiFetch, profile } = useAuth();
+export function TopsisPage({ isActive = true }: { isActive?: boolean }) {
+  const { apiFetch, getCached, profile, mutationVersion } = useAuth();
   const { refreshScrollTriggers } = useSmoothScroll();
   const isAdmin = profile?.role === 'admin';
 
   const [activeTab, setActiveTab] = useState<TopsisTab>('analyze');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const autoOpenedRef = useRef(false);
+  const syncedMutationRef = useRef(mutationVersion);
+  const prevActiveRef = useRef(isActive);
+  const candidateReqIdRef = useRef(0);
+
+  const initialCriteria = useMemo(() => getCached<CriterionRow[]>('/api/topsis/criteria'), [getCached]);
+  const initialRuns = useMemo(() => getCached<TopsisRunSummary[]>('/api/topsis/runs'), [getCached]);
 
   // Criteria & weights
-  const [criteria, setCriteria] = useState<CriterionRow[]>([]);
-  const [weightEdits, setWeightEdits] = useState<Record<string, string>>({});
+  const [criteria, setCriteria] = useState<CriterionRow[]>(initialCriteria ?? []);
+  const [loadingCriteria, setLoadingCriteria] = useState(!initialCriteria);
+  const [weightEdits, setWeightEdits] = useState<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    if (initialCriteria) {
+      for (const c of initialCriteria) map[c.code] = String(c.weight);
+    }
+    return map;
+  });
   const [savingWeights, setSavingWeights] = useState(false);
 
   // Analysis parameters & candidates
@@ -106,15 +123,31 @@ export function TopsisPage() {
   const [candidateSearch, setCandidateSearch] = useState('');
   const [candidates, setCandidates] = useState<CandidateRow[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [loadingCandidates, setLoadingCandidates] = useState(true);
   const [runningTopsis, setRunningTopsis] = useState(false);
 
   // Results & History
-  const [runs, setRuns] = useState<TopsisRunSummary[]>([]);
-  const [activeDetail, setActiveDetail] = useState<TopsisRunDetail | null>(null);
+  const [runs, setRuns] = useState<TopsisRunSummary[]>(initialRuns ?? []);
+  const [loadingRuns, setLoadingRuns] = useState(!initialRuns);
+  const [activeDetail, setActiveDetail] = useState<TopsisRunDetail | null>(() =>
+    initialRuns && initialRuns.length > 0
+      ? getCached<TopsisRunDetail>(`/api/topsis/runs/${initialRuns[0].id}`)
+      : null,
+  );
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [deleteRunTarget, setDeleteRunTarget] = useState<TopsisRunSummary | null>(null);
 
   const loadCriteria = useCallback(async () => {
+    const cached = getCached<CriterionRow[]>('/api/topsis/criteria');
+    if (cached) {
+      setCriteria(cached);
+      const map: Record<string, string> = {};
+      for (const c of cached) map[c.code] = String(c.weight);
+      setWeightEdits(map);
+      setLoadingCriteria(false);
+      return;
+    }
+    setLoadingCriteria(true);
     try {
       const rows = await apiFetch<CriterionRow[]>('/api/topsis/criteria');
       setCriteria(rows);
@@ -126,78 +159,142 @@ export function TopsisPage() {
         type: 'error',
         text: err instanceof Error ? err.message : 'Gagal memuat kriteria TOPSIS.',
       });
+    } finally {
+      setLoadingCriteria(false);
     }
-  }, [apiFetch]);
+  }, [apiFetch, getCached]);
 
   const loadCandidates = useCallback(async () => {
+    const params = new URLSearchParams({
+      periodStart,
+      periodEnd,
+      mode: candidateSearch.trim() ? 'search' : candidateMode,
+      limit: '30',
+    });
+    if (candidateSearch.trim()) params.set('search', candidateSearch.trim());
+    const url = `/api/topsis/candidates?${params}`;
+
+    const cached = getCached<{ candidates: CandidateRow[] }>(url);
+    if (cached) {
+      setCandidates(cached.candidates);
+      setSelectedIds(new Set(cached.candidates.slice(0, 10).map((c) => c.medicineId)));
+      setLoadingCandidates(false);
+      return;
+    }
+
+    const reqId = ++candidateReqIdRef.current;
     setLoadingCandidates(true);
     try {
-      const params = new URLSearchParams({
-        periodStart,
-        periodEnd,
-        mode: candidateSearch.trim() ? 'search' : candidateMode,
-        limit: '30',
-      });
-      if (candidateSearch.trim()) params.set('search', candidateSearch.trim());
-
-      const res = await apiFetch<{ candidates: CandidateRow[] }>(`/api/topsis/candidates?${params}`);
+      const res = await apiFetch<{ candidates: CandidateRow[] }>(url);
+      if (reqId !== candidateReqIdRef.current) return;
       setCandidates(res.candidates);
       setSelectedIds(new Set(res.candidates.slice(0, 10).map((c) => c.medicineId)));
     } catch (err: unknown) {
+      if (reqId !== candidateReqIdRef.current) return;
       setFeedback({
         type: 'error',
         text: err instanceof Error ? err.message : 'Gagal memuat kandidat obat.',
       });
     } finally {
-      setLoadingCandidates(false);
+      if (reqId === candidateReqIdRef.current) {
+        setLoadingCandidates(false);
+      }
     }
-  }, [apiFetch, periodStart, periodEnd, candidateMode, candidateSearch]);
+  }, [apiFetch, getCached, periodStart, periodEnd, candidateMode, candidateSearch]);
 
   const loadRunDetail = useCallback(
     async (runId: number) => {
+      const url = `/api/topsis/runs/${runId}`;
+      const cached = getCached<TopsisRunDetail>(url);
+      if (cached) {
+        setActiveDetail(cached);
+        setLoadingDetail(false);
+        return;
+      }
+      setLoadingDetail(true);
       try {
-        const detail = await apiFetch<TopsisRunDetail>(`/api/topsis/runs/${runId}`);
+        const detail = await apiFetch<TopsisRunDetail>(url);
         setActiveDetail(detail);
       } catch (err: unknown) {
         setFeedback({
           type: 'error',
           text: err instanceof Error ? err.message : 'Gagal memuat detail TOPSIS.',
         });
+      } finally {
+        setLoadingDetail(false);
       }
     },
-    [apiFetch],
+    [apiFetch, getCached],
   );
 
   const loadRuns = useCallback(
     async (autoOpenLatest = false) => {
+      const cached = getCached<TopsisRunSummary[]>('/api/topsis/runs');
+      if (cached) {
+        setRuns(cached);
+        setLoadingRuns(false);
+        if (autoOpenLatest && cached.length > 0 && !autoOpenedRef.current) {
+          autoOpenedRef.current = true;
+          await loadRunDetail(cached[0].id);
+        }
+        return;
+      }
+      setLoadingRuns(true);
       try {
         const list = await apiFetch<TopsisRunSummary[]>('/api/topsis/runs');
         setRuns(list);
-        if (autoOpenLatest && list.length > 0 && !activeDetail) {
+        if (autoOpenLatest && list.length > 0 && !autoOpenedRef.current) {
+          autoOpenedRef.current = true;
           await loadRunDetail(list[0].id);
         }
       } catch {
         // ignore
+      } finally {
+        setLoadingRuns(false);
       }
     },
-    [apiFetch, activeDetail, loadRunDetail],
+    [apiFetch, getCached, loadRunDetail],
   );
 
   useEffect(() => {
-    loadCriteria();
+    if (!getCached('/api/topsis/criteria')) {
+      loadCriteria();
+    }
     loadRuns(true);
-  }, [loadCriteria, loadRuns]);
+  }, [getCached, loadCriteria, loadRuns]);
 
   useEffect(() => {
-    refreshScrollTriggers();
-  }, [activeTab, activeDetail, refreshScrollTriggers]);
+    if (isActive) {
+      refreshScrollTriggers();
+    }
+  }, [isActive, activeTab, activeDetail, refreshScrollTriggers]);
 
+  const prevSearchRef = useRef(candidateSearch);
   useEffect(() => {
+    const searchChanged = prevSearchRef.current !== candidateSearch;
+    prevSearchRef.current = candidateSearch;
+
+    if (!searchChanged) {
+      loadCandidates();
+      return;
+    }
     const t = setTimeout(() => {
       loadCandidates();
     }, 250);
     return () => clearTimeout(t);
-  }, [loadCandidates]);
+  }, [candidateSearch, loadCandidates]);
+
+  useEffect(() => {
+    if (isActive && !prevActiveRef.current && syncedMutationRef.current !== mutationVersion) {
+      syncedMutationRef.current = mutationVersion;
+      if (!getCached('/api/topsis/criteria')) loadCriteria();
+      loadCandidates();
+      if (!getCached('/api/topsis/runs')) loadRuns(false);
+    } else if (isActive) {
+      syncedMutationRef.current = mutationVersion;
+    }
+    prevActiveRef.current = isActive;
+  }, [isActive, mutationVersion, loadCriteria, loadCandidates, loadRuns]);
 
   const handleSaveWeights = async () => {
     if (!isAdmin) return;
@@ -224,37 +321,45 @@ export function TopsisPage() {
     }
   };
 
-  const toggleSelect = (id: number) => {
+  const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
-  const toggleAll = () => {
-    if (selectedIds.size === candidates.length) {
+  const allSelected = useMemo(
+    () => candidates.length > 0 && selectedIds.size === candidates.length,
+    [candidates.length, selectedIds.size],
+  );
+
+  const toggleAll = useCallback(() => {
+    if (allSelected) {
       setSelectedIds(new Set());
     } else {
       setSelectedIds(new Set(candidates.map((c) => c.medicineId)));
     }
-  };
+  }, [allSelected, candidates]);
 
-  const updateOverrideScore = (
-    medicineId: number,
-    field: 'overrideK1' | 'overrideK2' | 'overrideK3' | 'overrideK4' | 'overrideK5',
-    val: string,
-  ) => {
-    const num = Number(val);
-    setCandidates((prev) =>
-      prev.map((c) =>
-        c.medicineId === medicineId
-          ? { ...c, [field]: Number.isFinite(num) && num >= 1 && num <= 5 ? num : undefined }
-          : c,
-      ),
-    );
-  };
+  const updateOverrideScore = useCallback(
+    (
+      medicineId: number,
+      field: 'overrideK1' | 'overrideK2' | 'overrideK3' | 'overrideK4' | 'overrideK5',
+      val: string,
+    ) => {
+      const num = Number(val);
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.medicineId === medicineId
+            ? { ...c, [field]: Number.isFinite(num) && num >= 1 && num <= 5 ? num : undefined }
+            : c,
+        ),
+      );
+    },
+    [],
+  );
 
   const handleRunTopsis = async () => {
     const chosen = candidates.filter((c) => selectedIds.has(c.medicineId));
@@ -355,32 +460,17 @@ export function TopsisPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 self-start shrink-0">
-          {(
-            [
-              { key: 'analyze', label: 'Analisis & Bobot', icon: Calculator },
-              { key: 'results', label: 'Hasil & 8 Tahap', icon: FileSpreadsheet },
-              { key: 'history', label: `Riwayat (${runs.length})`, icon: History },
-            ] as { key: TopsisTab; label: string; icon: React.ComponentType<{ className?: string }> }[]
-          ).map((t) => {
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setActiveTab(t.key)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === t.key
-                    ? 'bg-sky-600 text-white'
-                    : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedTabs
+          layoutId="topsis-tabs"
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          className="self-start shrink-0"
+          items={[
+            { key: 'analyze', label: 'Analisis & Bobot', icon: Calculator },
+            { key: 'results', label: 'Hasil & 8 Tahap', icon: FileSpreadsheet },
+            { key: 'history', label: `Riwayat (${runs.length})`, icon: History },
+          ]}
+        />
       </div>
 
       {/* Methodological Note Banner */}
@@ -458,36 +548,40 @@ export function TopsisPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {criteria.map((c) => (
-                    <tr key={c.code}>
-                      <td className="py-2.5 px-4 font-mono font-bold text-sky-700">{c.code}</td>
-                      <td className="py-2.5 px-4 font-semibold text-slate-900">{c.name}</td>
-                      <td className="py-2.5 px-4 uppercase font-medium text-slate-700">
-                        {c.originalType === 'cost' ? 'Cost' : 'Benefit'}
-                      </td>
-                      <td className="py-2.5 px-4 uppercase font-medium text-emerald-700">
-                        {c.calculationType === 'benefit' ? 'Benefit (Skor Konversi)' : 'Cost'}
-                      </td>
-                      <td className="py-2.5 px-4 text-right tabular-nums">
-                        {isAdmin ? (
-                          <input
-                            type="number"
-                            min="1"
-                            max="10"
-                            step="1"
-                            value={weightEdits[c.code] ?? String(c.weight)}
-                            onChange={(e) =>
-                              setWeightEdits({ ...weightEdits, [c.code]: e.target.value })
-                            }
-                            className="w-16 px-2 py-1 text-right border border-slate-200 rounded-md font-bold tabular-nums"
-                          />
-                        ) : (
-                          <span className="font-bold text-slate-900">{c.weight}</span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-4 text-slate-500 max-w-md">{c.description}</td>
-                    </tr>
-                  ))}
+                  {loadingCriteria && criteria.length === 0 ? (
+                    <TableRowsSkeleton cols={6} rows={5} />
+                  ) : (
+                    criteria.map((c) => (
+                      <tr key={c.code}>
+                        <td className="py-2.5 px-4 font-mono font-bold text-sky-700">{c.code}</td>
+                        <td className="py-2.5 px-4 font-semibold text-slate-900">{c.name}</td>
+                        <td className="py-2.5 px-4 uppercase font-medium text-slate-700">
+                          {c.originalType === 'cost' ? 'Cost' : 'Benefit'}
+                        </td>
+                        <td className="py-2.5 px-4 uppercase font-medium text-emerald-700">
+                          {c.calculationType === 'benefit' ? 'Benefit (Skor Konversi)' : 'Cost'}
+                        </td>
+                        <td className="py-2.5 px-4 text-right tabular-nums">
+                          {isAdmin ? (
+                            <input
+                              type="number"
+                              min="1"
+                              max="10"
+                              step="1"
+                              value={weightEdits[c.code] ?? String(c.weight)}
+                              onChange={(e) =>
+                                setWeightEdits({ ...weightEdits, [c.code]: e.target.value })
+                              }
+                              className="w-16 px-2 py-1 text-right border border-slate-200 rounded-md font-bold tabular-nums"
+                            />
+                          ) : (
+                            <span className="font-bold text-slate-900">{c.weight}</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-4 text-slate-500 max-w-md">{c.description}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -549,7 +643,7 @@ export function TopsisPage() {
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <div className="relative w-64">
+                  <div className="relative w-full sm:w-64">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
@@ -613,11 +707,7 @@ export function TopsisPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loadingCandidates ? (
-                    <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-400">
-                        Menyiapkan kandidat obat &amp; menghitung parameter periode...
-                      </td>
-                    </tr>
+                    <TableRowsSkeleton cols={8} rows={6} />
                   ) : candidates.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-8 text-center text-slate-500">
@@ -708,7 +798,9 @@ export function TopsisPage() {
       {/* ==================== TAB 2: HASIL & 8 TAHAP PERHITUNGAN ==================== */}
       {activeTab === 'results' && (
         <div className="space-y-6">
-          {!activeDetail ? (
+          {loadingDetail ? (
+            <TopsisDetailSkeleton />
+          ) : !activeDetail ? (
             <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3">
               <p className="text-sm text-slate-600">
                 Belum ada hasil perhitungan TOPSIS yang dipilih.
@@ -1017,7 +1109,9 @@ export function TopsisPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {runs.length === 0 ? (
+                {loadingRuns && runs.length === 0 ? (
+                  <TableRowsSkeleton cols={6} rows={5} />
+                ) : runs.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-8 text-center text-slate-500">
                       Belum ada riwayat perhitungan tersimpan.
@@ -1068,9 +1162,13 @@ export function TopsisPage() {
         </MotionCard>
       )}
 
-      {deleteRunTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-sm p-5 space-y-4">
+      <MotionModal
+        open={Boolean(deleteRunTarget)}
+        onClose={() => setDeleteRunTarget(null)}
+        maxWidthClass="max-w-sm"
+      >
+        {deleteRunTarget && (
+          <div className="p-5 space-y-4">
             <h3 className="text-sm font-bold text-slate-900">Hapus Riwayat TOPSIS</h3>
             <p className="text-xs text-slate-600">
               Yakin ingin menghapus riwayat <strong>{deleteRunTarget.title}</strong>?
@@ -1079,21 +1177,21 @@ export function TopsisPage() {
               <button
                 type="button"
                 onClick={() => setDeleteRunTarget(null)}
-                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
+                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="button"
                 onClick={handleDeleteRun}
-                className="px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 rounded-lg cursor-pointer"
+                className="px-3.5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer"
               >
                 Ya, Hapus
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </MotionModal>
     </div>
   );
 }

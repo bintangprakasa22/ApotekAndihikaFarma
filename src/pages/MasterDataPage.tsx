@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   Search,
@@ -13,6 +13,10 @@ import { useAuth } from '../context/AuthContext';
 import { formatDate, formatNumber, formatRupiah } from '../lib/format';
 import { AnimatedHeading } from '../components/AnimatedHeading';
 import { MotionCard } from '../components/MotionCard';
+import { MotionModal } from '../components/MotionModal';
+import { TableRowsSkeleton } from '../components/PageSkeleton';
+import { SegmentedTabs } from '../components/SegmentedTabs';
+import { useSmoothScroll } from '../components/SmoothScrollProvider';
 
 type MasterTab = 'medicines' | 'categories' | 'suppliers';
 
@@ -63,24 +67,40 @@ interface BatchItem {
   receivedAt: string;
 }
 
-export function MasterDataPage() {
-  const { apiFetch } = useAuth();
+export function MasterDataPage({ isActive = true }: { isActive?: boolean }) {
+  const { apiFetch, getCached, mutationVersion } = useAuth();
+  const { refreshScrollTriggers } = useSmoothScroll();
   const [activeTab, setActiveTab] = useState<MasterTab>('medicines');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const syncedMutationRef = useRef(mutationVersion);
+  const prevActiveRef = useRef(isActive);
+  const medReqIdRef = useRef(0);
 
-  // Shared lists for dropdowns
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
-  const [suppliers, setSuppliers] = useState<SupplierItem[]>([]);
+  const initialCats = useMemo(() => getCached<CategoryItem[]>('/api/categories'), [getCached]);
+  const initialSups = useMemo(() => getCached<SupplierItem[]>('/api/suppliers'), [getCached]);
+  const initialMeds = useMemo(
+    () =>
+      getCached<{ items: MedicineItem[]; total: number; totalPages: number }>(
+        '/api/medicines?page=1&limit=20&status=all',
+      ),
+    [getCached],
+  );
+
+  // Shared lists for dropdowns & tables
+  const [categories, setCategories] = useState<CategoryItem[]>(initialCats ?? []);
+  const [suppliers, setSuppliers] = useState<SupplierItem[]>(initialSups ?? []);
+  const [loadingCats, setLoadingCats] = useState(!initialCats);
+  const [loadingSups, setLoadingSups] = useState(!initialSups);
 
   // Medicines state
-  const [medicines, setMedicines] = useState<MedicineItem[]>([]);
+  const [medicines, setMedicines] = useState<MedicineItem[]>(initialMeds?.items ?? []);
   const [medSearch, setMedSearch] = useState('');
   const [medCategoryFilter, setMedCategoryFilter] = useState('');
   const [medStatusFilter, setMedStatusFilter] = useState('all');
   const [medPage, setMedPage] = useState(1);
-  const [medTotal, setMedTotal] = useState(0);
-  const [medTotalPages, setMedTotalPages] = useState(1);
-  const [loadingMeds, setLoadingMeds] = useState(false);
+  const [medTotal, setMedTotal] = useState(initialMeds?.total ?? 0);
+  const [medTotalPages, setMedTotalPages] = useState(initialMeds?.totalPages ?? 1);
+  const [loadingMeds, setLoadingMeds] = useState(!initialMeds);
 
   // Medicine modal
   const [medModalOpen, setMedModalOpen] = useState(false);
@@ -133,65 +153,188 @@ export function MasterDataPage() {
   } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const loadRefs = useCallback(async () => {
-    try {
-      const [cats, sups] = await Promise.all([
-        apiFetch<CategoryItem[]>('/api/categories'),
-        apiFetch<SupplierItem[]>('/api/suppliers'),
-      ]);
-      setCategories(cats);
-      setSuppliers(sups);
-    } catch (err: unknown) {
-      setFeedback({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Gagal memuat kategori dan supplier.',
-      });
-    }
-  }, [apiFetch]);
+  const loadCategories = useCallback(
+    async (bypassCache = false) => {
+      if (!bypassCache) {
+        const cached = getCached<CategoryItem[]>('/api/categories');
+        if (cached) {
+          setCategories(cached);
+          setLoadingCats(false);
+          return;
+        }
+        setLoadingCats(true);
+      }
+      try {
+        const cats = await apiFetch<CategoryItem[]>(
+          '/api/categories',
+          bypassCache ? { cache: 'no-store' } : {},
+        );
+        setCategories(cats);
+      } catch (err: unknown) {
+        setFeedback({
+          type: 'error',
+          text: err instanceof Error ? err.message : 'Gagal memuat data kategori.',
+        });
+      } finally {
+        setLoadingCats(false);
+      }
+    },
+    [apiFetch, getCached],
+  );
 
-  const loadMedicines = useCallback(async () => {
-    setLoadingMeds(true);
-    try {
-      const params = new URLSearchParams({
-        page: String(medPage),
-        limit: '20',
-        status: medStatusFilter,
-      });
-      if (medSearch.trim()) params.set('search', medSearch.trim());
-      if (medCategoryFilter) params.set('categoryId', medCategoryFilter);
+  const loadSuppliers = useCallback(
+    async (bypassCache = false) => {
+      if (!bypassCache) {
+        const cached = getCached<SupplierItem[]>('/api/suppliers');
+        if (cached) {
+          setSuppliers(cached);
+          setLoadingSups(false);
+          return;
+        }
+        setLoadingSups(true);
+      }
+      try {
+        const sups = await apiFetch<SupplierItem[]>(
+          '/api/suppliers',
+          bypassCache ? { cache: 'no-store' } : {},
+        );
+        setSuppliers(sups);
+      } catch (err: unknown) {
+        setFeedback({
+          type: 'error',
+          text: err instanceof Error ? err.message : 'Gagal memuat data supplier.',
+        });
+      } finally {
+        setLoadingSups(false);
+      }
+    },
+    [apiFetch, getCached],
+  );
 
-      const res = await apiFetch<{
-        items: MedicineItem[];
-        total: number;
-        page: number;
-        totalPages: number;
-      }>(`/api/medicines?${params.toString()}`);
+  const buildMedicinesUrl = useCallback(() => {
+    const params = new URLSearchParams({
+      page: String(medPage),
+      limit: '20',
+      status: medStatusFilter,
+    });
+    if (medSearch.trim()) params.set('search', medSearch.trim());
+    if (medCategoryFilter) params.set('categoryId', medCategoryFilter);
+    return `/api/medicines?${params.toString()}`;
+  }, [medPage, medStatusFilter, medSearch, medCategoryFilter]);
 
-      setMedicines(res.items);
-      setMedTotal(res.total);
-      setMedTotalPages(res.totalPages);
-    } catch (err: unknown) {
-      setFeedback({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Gagal memuat daftar obat.',
-      });
-    } finally {
-      setLoadingMeds(false);
-    }
-  }, [apiFetch, medPage, medStatusFilter, medSearch, medCategoryFilter]);
+  const loadMedicines = useCallback(
+    async (silent = false, bypassCache = false) => {
+      const url = buildMedicinesUrl();
+      if (!bypassCache) {
+        const cached = getCached<{
+          items: MedicineItem[];
+          total: number;
+          page: number;
+          totalPages: number;
+        }>(url);
+        if (cached) {
+          setMedicines(cached.items);
+          setMedTotal(cached.total);
+          setMedTotalPages(cached.totalPages);
+          setLoadingMeds(false);
+          return;
+        }
+      }
+
+      const reqId = ++medReqIdRef.current;
+      if (!silent) setLoadingMeds(true);
+      try {
+        const res = await apiFetch<{
+          items: MedicineItem[];
+          total: number;
+          page: number;
+          totalPages: number;
+        }>(url, bypassCache ? { cache: 'no-store' } : {});
+
+        if (reqId !== medReqIdRef.current) return;
+        setMedicines(res.items);
+        setMedTotal(res.total);
+        setMedTotalPages(res.totalPages);
+      } catch (err: unknown) {
+        if (reqId !== medReqIdRef.current) return;
+        if (!silent) {
+          setFeedback({
+            type: 'error',
+            text: err instanceof Error ? err.message : 'Gagal memuat daftar obat.',
+          });
+        }
+      } finally {
+        if (reqId === medReqIdRef.current) {
+          setLoadingMeds(false);
+        }
+      }
+    },
+    [apiFetch, buildMedicinesUrl, getCached],
+  );
 
   useEffect(() => {
-    loadRefs();
-  }, [loadRefs]);
+    if (!getCached<CategoryItem[]>('/api/categories')) loadCategories();
+    if (!getCached<SupplierItem[]>('/api/suppliers')) loadSuppliers();
+  }, [getCached, loadCategories, loadSuppliers]);
 
+  const prevMedSearchRef = useRef(medSearch);
   useEffect(() => {
+    const searchChanged = prevMedSearchRef.current !== medSearch;
+    prevMedSearchRef.current = medSearch;
+
+    if (!searchChanged) {
+      loadMedicines();
+      return;
+    }
     const timer = setTimeout(() => {
       loadMedicines();
     }, 200);
     return () => clearTimeout(timer);
-  }, [loadMedicines]);
+  }, [medSearch, loadMedicines]);
 
-  const openAddMedicine = () => {
+  useEffect(() => {
+    if (isActive && !prevActiveRef.current && syncedMutationRef.current !== mutationVersion) {
+      syncedMutationRef.current = mutationVersion;
+      if (!getCached('/api/categories')) loadCategories(true);
+      if (!getCached('/api/suppliers')) loadSuppliers(true);
+      if (!getCached(buildMedicinesUrl())) loadMedicines(true, true);
+    } else if (isActive) {
+      syncedMutationRef.current = mutationVersion;
+    }
+    prevActiveRef.current = isActive;
+  }, [
+    isActive,
+    mutationVersion,
+    buildMedicinesUrl,
+    getCached,
+    loadCategories,
+    loadSuppliers,
+    loadMedicines,
+  ]);
+
+  useEffect(() => {
+    if (activeTab === 'categories' && !getCached('/api/categories')) {
+      loadCategories();
+    } else if (activeTab === 'suppliers' && !getCached('/api/suppliers')) {
+      loadSuppliers();
+    } else if (activeTab === 'medicines' && !getCached(buildMedicinesUrl())) {
+      loadMedicines();
+    }
+    if (isActive) {
+      refreshScrollTriggers();
+    }
+  }, [
+    isActive,
+    activeTab,
+    getCached,
+    buildMedicinesUrl,
+    loadCategories,
+    loadSuppliers,
+    loadMedicines,
+    refreshScrollTriggers,
+  ]);
+
+  const openAddMedicine = useCallback(() => {
     setEditingMed(null);
     setMedForm({
       pluCode: '',
@@ -207,9 +350,9 @@ export function MasterDataPage() {
       nearestExpiredDate: '',
     });
     setMedModalOpen(true);
-  };
+  }, [categories, suppliers]);
 
-  const openEditMedicine = (m: MedicineItem) => {
+  const openEditMedicine = useCallback((m: MedicineItem) => {
     setEditingMed(m);
     setMedForm({
       pluCode: m.pluCode,
@@ -225,7 +368,7 @@ export function MasterDataPage() {
       nearestExpiredDate: m.nearestExpiredDate || '',
     });
     setMedModalOpen(true);
-  };
+  }, []);
 
   const handleSaveMedicine = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -259,7 +402,7 @@ export function MasterDataPage() {
         setFeedback({ type: 'success', text: `Obat baru "${medForm.name}" berhasil ditambahkan.` });
       }
       setMedModalOpen(false);
-      await Promise.all([loadMedicines(), loadRefs()]);
+      await loadMedicines(false, true);
     } catch (err: unknown) {
       setFeedback({
         type: 'error',
@@ -270,21 +413,24 @@ export function MasterDataPage() {
     }
   };
 
-  const openBatches = async (m: MedicineItem) => {
-    setBatchModalMed(m);
-    setLoadingBatches(true);
-    try {
-      const rows = await apiFetch<BatchItem[]>(`/api/medicines/${m.id}/batches`);
-      setBatches(rows);
-    } catch (err: unknown) {
-      setFeedback({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Gagal memuat daftar batch.',
-      });
-    } finally {
-      setLoadingBatches(false);
-    }
-  };
+  const openBatches = useCallback(
+    async (m: MedicineItem) => {
+      setBatchModalMed(m);
+      setLoadingBatches(true);
+      try {
+        const rows = await apiFetch<BatchItem[]>(`/api/medicines/${m.id}/batches`);
+        setBatches(rows);
+      } catch (err: unknown) {
+        setFeedback({
+          type: 'error',
+          text: err instanceof Error ? err.message : 'Gagal memuat daftar batch.',
+        });
+      } finally {
+        setLoadingBatches(false);
+      }
+    },
+    [apiFetch],
+  );
 
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -305,7 +451,7 @@ export function MasterDataPage() {
         setFeedback({ type: 'success', text: `Kategori "${catForm.name}" ditambahkan.` });
       }
       setCatModalOpen(false);
-      await loadRefs();
+      await loadCategories(true);
     } catch (err: unknown) {
       setFeedback({
         type: 'error',
@@ -339,7 +485,7 @@ export function MasterDataPage() {
         setFeedback({ type: 'success', text: `Supplier "${supForm.name}" ditambahkan.` });
       }
       setSupModalOpen(false);
-      await loadRefs();
+      await loadSuppliers(true);
     } catch (err: unknown) {
       setFeedback({
         type: 'error',
@@ -352,20 +498,27 @@ export function MasterDataPage() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    const deletedKind = deleteTarget.kind;
     setDeleting(true);
     setFeedback(null);
     try {
       const endpoint =
-        deleteTarget.kind === 'medicine'
+        deletedKind === 'medicine'
           ? `/api/medicines/${deleteTarget.id}`
-          : deleteTarget.kind === 'category'
+          : deletedKind === 'category'
             ? `/api/categories/${deleteTarget.id}`
             : `/api/suppliers/${deleteTarget.id}`;
 
       await apiFetch(endpoint, { method: 'DELETE' });
       setFeedback({ type: 'success', text: `"${deleteTarget.label}" berhasil dihapus.` });
       setDeleteTarget(null);
-      await Promise.all([loadMedicines(), loadRefs()]);
+      if (deletedKind === 'medicine') {
+        await loadMedicines(false, true);
+      } else if (deletedKind === 'category') {
+        await loadCategories(true);
+      } else {
+        await loadSuppliers(true);
+      }
     } catch (err: unknown) {
       setFeedback({
         type: 'error',
@@ -376,19 +529,24 @@ export function MasterDataPage() {
     }
   };
 
-  const filteredCategories = categories.filter(
-    (c) =>
-      !catSearch.trim() ||
-      c.name.toLowerCase().includes(catSearch.toLowerCase()) ||
-      c.code.toLowerCase().includes(catSearch.toLowerCase()),
-  );
+  const deferredCatSearch = useDeferredValue(catSearch);
+  const deferredSupSearch = useDeferredValue(supSearch);
 
-  const filteredSuppliers = suppliers.filter(
-    (s) =>
-      !supSearch.trim() ||
-      s.name.toLowerCase().includes(supSearch.toLowerCase()) ||
-      s.address.toLowerCase().includes(supSearch.toLowerCase()),
-  );
+  const filteredCategories = useMemo(() => {
+    const q = deferredCatSearch.trim().toLowerCase();
+    if (!q) return categories;
+    return categories.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q),
+    );
+  }, [categories, deferredCatSearch]);
+
+  const filteredSuppliers = useMemo(() => {
+    const q = deferredSupSearch.trim().toLowerCase();
+    if (!q) return suppliers;
+    return suppliers.filter(
+      (s) => s.name.toLowerCase().includes(q) || s.address.toLowerCase().includes(q),
+    );
+  }, [suppliers, deferredSupSearch]);
 
   return (
     <div className="space-y-5">
@@ -405,28 +563,17 @@ export function MasterDataPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 self-start">
-          {(
-            [
-              { key: 'medicines', label: `Data Obat (${formatNumber(medTotal, 0)})` },
-              { key: 'categories', label: `Kategori (${categories.length})` },
-              { key: 'suppliers', label: `Supplier (${suppliers.length})` },
-            ] as { key: MasterTab; label: string }[]
-          ).map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setActiveTab(t.key)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                activeTab === t.key
-                  ? 'bg-sky-600 text-white'
-                  : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedTabs
+          layoutId="master-tabs"
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          className="self-start"
+          items={[
+            { key: 'medicines', label: `Data Obat (${formatNumber(medTotal, 0)})` },
+            { key: 'categories', label: `Kategori (${categories.length})` },
+            { key: 'suppliers', label: `Supplier (${suppliers.length})` },
+          ]}
+        />
       </div>
 
       {feedback && (
@@ -524,11 +671,7 @@ export function MasterDataPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
                 {loadingMeds ? (
-                  <tr>
-                    <td colSpan={9} className="py-10 text-center text-slate-400">
-                      Memuat daftar obat...
-                    </td>
-                  </tr>
+                  <TableRowsSkeleton cols={9} rows={8} />
                 ) : medicines.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="py-10 text-center text-slate-500">
@@ -681,38 +824,48 @@ export function MasterDataPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredCategories.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50/70">
-                    <td className="py-3 px-4 font-mono font-semibold text-sky-700">{c.code}</td>
-                    <td className="py-3 px-4 font-semibold text-slate-900">{c.name}</td>
-                    <td className="py-3 px-4 text-slate-600">{c.description || '-'}</td>
-                    <td className="py-3 px-4 text-right tabular-nums text-slate-700">
-                      {formatNumber(c.medicineCount ?? 0, 0)}
-                    </td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingCat(c);
-                          setCatForm({ code: c.code, name: c.name, description: c.description });
-                          setCatModalOpen(true);
-                        }}
-                        className="p-1.5 text-slate-500 hover:text-sky-700 hover:bg-sky-50 rounded-md cursor-pointer"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDeleteTarget({ kind: 'category', id: c.id, label: c.name })
-                        }
-                        className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md cursor-pointer ml-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                {loadingCats && categories.length === 0 ? (
+                  <TableRowsSkeleton cols={5} rows={6} />
+                ) : filteredCategories.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-10 text-center text-slate-500">
+                      Tidak ada kategori ditemukan.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredCategories.map((c) => (
+                    <tr key={c.id} className="hover:bg-slate-50/70">
+                      <td className="py-3 px-4 font-mono font-semibold text-sky-700">{c.code}</td>
+                      <td className="py-3 px-4 font-semibold text-slate-900">{c.name}</td>
+                      <td className="py-3 px-4 text-slate-600">{c.description || '-'}</td>
+                      <td className="py-3 px-4 text-right tabular-nums text-slate-700">
+                        {formatNumber(c.medicineCount ?? 0, 0)}
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCat(c);
+                            setCatForm({ code: c.code, name: c.name, description: c.description });
+                            setCatModalOpen(true);
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-sky-700 hover:bg-sky-50 rounded-md cursor-pointer"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDeleteTarget({ kind: 'category', id: c.id, label: c.name })
+                          }
+                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md cursor-pointer ml-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -760,50 +913,60 @@ export function MasterDataPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredSuppliers.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50/70">
-                    <td className="py-3 px-4 font-semibold text-slate-900">{s.name}</td>
-                    <td className="py-3 px-4 text-slate-600 max-w-xs">{s.address || '-'}</td>
-                    <td className="py-3 px-4 text-slate-600">
-                      <p>{s.phone || '-'}</p>
-                      <p className="text-[11px] text-slate-400">{s.email || '-'}</p>
-                    </td>
-                    <td className="py-3 px-4 text-right font-semibold text-sky-700 tabular-nums whitespace-nowrap">
-                      {s.leadTimeDays} hari
-                    </td>
-                    <td className="py-3 px-4 text-right tabular-nums text-slate-700">
-                      {formatNumber(s.medicineCount ?? 0, 0)}
-                    </td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingSup(s);
-                          setSupForm({
-                            name: s.name,
-                            address: s.address,
-                            phone: s.phone,
-                            email: s.email,
-                            leadTimeDays: String(s.leadTimeDays),
-                          });
-                          setSupModalOpen(true);
-                        }}
-                        className="p-1.5 text-slate-500 hover:text-sky-700 hover:bg-sky-50 rounded-md cursor-pointer"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDeleteTarget({ kind: 'supplier', id: s.id, label: s.name })
-                        }
-                        className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md cursor-pointer ml-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                {loadingSups && suppliers.length === 0 ? (
+                  <TableRowsSkeleton cols={6} rows={6} />
+                ) : filteredSuppliers.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-10 text-center text-slate-500">
+                      Tidak ada supplier ditemukan.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredSuppliers.map((s) => (
+                    <tr key={s.id} className="hover:bg-slate-50/70">
+                      <td className="py-3 px-4 font-semibold text-slate-900">{s.name}</td>
+                      <td className="py-3 px-4 text-slate-600 max-w-xs">{s.address || '-'}</td>
+                      <td className="py-3 px-4 text-slate-600">
+                        <p>{s.phone || '-'}</p>
+                        <p className="text-[11px] text-slate-400">{s.email || '-'}</p>
+                      </td>
+                      <td className="py-3 px-4 text-right font-semibold text-sky-700 tabular-nums whitespace-nowrap">
+                        {s.leadTimeDays} hari
+                      </td>
+                      <td className="py-3 px-4 text-right tabular-nums text-slate-700">
+                        {formatNumber(s.medicineCount ?? 0, 0)}
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSup(s);
+                            setSupForm({
+                              name: s.name,
+                              address: s.address,
+                              phone: s.phone,
+                              email: s.email,
+                              leadTimeDays: String(s.leadTimeDays),
+                            });
+                            setSupModalOpen(true);
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-sky-700 hover:bg-sky-50 rounded-md cursor-pointer"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDeleteTarget({ kind: 'supplier', id: s.id, label: s.name })
+                          }
+                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md cursor-pointer ml-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -811,9 +974,11 @@ export function MasterDataPage() {
       )}
 
       {/* ==================== MODAL OBAT ==================== */}
-      {medModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+      <MotionModal
+        open={medModalOpen}
+        onClose={() => setMedModalOpen(false)}
+        maxWidthClass="max-w-xl"
+      >
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900">
                 {editingMed ? 'Edit Data Obat' : 'Tambah Data Obat Baru'}
@@ -821,7 +986,7 @@ export function MasterDataPage() {
               <button
                 type="button"
                 onClick={() => setMedModalOpen(false)}
-                className="p-1.5 text-slate-500 hover:text-slate-900 cursor-pointer"
+                className="p-1.5 text-slate-500 hover:text-slate-900 rounded-md hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -992,14 +1157,16 @@ export function MasterDataPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </MotionModal>
 
       {/* ==================== MODAL BATCH FEFO ==================== */}
-      {batchModalMed && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+      <MotionModal
+        open={Boolean(batchModalMed)}
+        onClose={() => setBatchModalMed(null)}
+        maxWidthClass="max-w-2xl"
+      >
+        {batchModalMed && (
+          <div className="max-h-[85vh] flex flex-col">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
@@ -1013,14 +1180,28 @@ export function MasterDataPage() {
               <button
                 type="button"
                 onClick={() => setBatchModalMed(null)}
-                className="p-1.5 text-slate-500 hover:text-slate-900 cursor-pointer"
+                className="p-1.5 text-slate-500 hover:text-slate-900 rounded-md hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 overflow-y-auto">
+            <div data-lenis-prevent className="p-5 overflow-y-auto">
               {loadingBatches ? (
-                <p className="text-xs text-slate-500 text-center py-6">Memuat batch...</p>
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase">
+                      <th className="py-2.5 px-3">No. Batch</th>
+                      <th className="py-2.5 px-3">Tanggal ED</th>
+                      <th className="py-2.5 px-3">Supplier</th>
+                      <th className="py-2.5 px-3 text-right">Awal</th>
+                      <th className="py-2.5 px-3 text-right">Sisa</th>
+                      <th className="py-2.5 px-3 text-right">Harga Beli</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    <TableRowsSkeleton cols={6} rows={4} />
+                  </tbody>
+                </table>
               ) : batches.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-6">
                   Belum ada catatan batch untuk obat ini.
@@ -1064,13 +1245,15 @@ export function MasterDataPage() {
               )}
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </MotionModal>
 
       {/* ==================== MODAL KATEGORI ==================== */}
-      {catModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-md">
+      <MotionModal
+        open={catModalOpen}
+        onClose={() => setCatModalOpen(false)}
+        maxWidthClass="max-w-md"
+      >
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900">
                 {editingCat ? 'Edit Kategori' : 'Tambah Kategori Baru'}
@@ -1078,7 +1261,7 @@ export function MasterDataPage() {
               <button
                 type="button"
                 onClick={() => setCatModalOpen(false)}
-                className="p-1.5 text-slate-500 cursor-pointer"
+                className="p-1.5 text-slate-500 hover:text-slate-900 rounded-md hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1130,14 +1313,14 @@ export function MasterDataPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </MotionModal>
 
       {/* ==================== MODAL SUPPLIER ==================== */}
-      {supModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-md">
+      <MotionModal
+        open={supModalOpen}
+        onClose={() => setSupModalOpen(false)}
+        maxWidthClass="max-w-md"
+      >
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900">
                 {editingSup ? 'Edit Supplier' : 'Tambah Supplier Baru'}
@@ -1145,7 +1328,7 @@ export function MasterDataPage() {
               <button
                 type="button"
                 onClick={() => setSupModalOpen(false)}
-                className="p-1.5 text-slate-500 cursor-pointer"
+                className="p-1.5 text-slate-500 hover:text-slate-900 rounded-md hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1219,14 +1402,16 @@ export function MasterDataPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </MotionModal>
 
       {/* ==================== MODAL KONFIRMASI HAPUS ==================== */}
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-sm p-5 space-y-4">
+      <MotionModal
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        maxWidthClass="max-w-sm"
+      >
+        {deleteTarget && (
+          <div className="p-5 space-y-4">
             <h3 className="text-sm font-bold text-slate-900">Konfirmasi Hapus Data</h3>
             <p className="text-xs text-slate-600 leading-relaxed">
               Apakah Anda yakin ingin menghapus{' '}
@@ -1237,7 +1422,7 @@ export function MasterDataPage() {
               <button
                 type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 rounded-lg cursor-pointer"
+                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg cursor-pointer"
               >
                 Batal
               </button>
@@ -1251,8 +1436,8 @@ export function MasterDataPage() {
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </MotionModal>
     </div>
   );
 }

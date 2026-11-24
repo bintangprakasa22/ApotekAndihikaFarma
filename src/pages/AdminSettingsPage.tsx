@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UserPlus, ShieldCheck, Activity, X } from 'lucide-react';
 import { useAuth, UserProfile, UserRole } from '../context/AuthContext';
 import { formatDateTime } from '../lib/format';
 import { AnimatedHeading } from '../components/AnimatedHeading';
 import { MotionCard } from '../components/MotionCard';
+import { MotionModal } from '../components/MotionModal';
+import { TableRowsSkeleton } from '../components/PageSkeleton';
 import { useSmoothScroll } from '../components/SmoothScrollProvider';
 
 interface AuditLogRow {
@@ -17,13 +19,17 @@ interface AuditLogRow {
   createdAt: string;
 }
 
-export function AdminSettingsPage() {
-  const { apiFetch, profile } = useAuth();
+export function AdminSettingsPage({ isActive = true }: { isActive?: boolean }) {
+  const { apiFetch, getCached, profile, mutationVersion } = useAuth();
   const { refreshScrollTriggers } = useSmoothScroll();
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [logs, setLogs] = useState<AuditLogRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const initialUsers = useMemo(() => getCached<UserProfile[]>('/api/users'), [getCached]);
+  const initialLogs = useMemo(() => getCached<AuditLogRow[]>('/api/audit-logs?limit=40'), [getCached]);
+  const [users, setUsers] = useState<UserProfile[]>(initialUsers ?? []);
+  const [logs, setLogs] = useState<AuditLogRow[]>(initialLogs ?? []);
+  const [loading, setLoading] = useState(!(initialUsers && initialLogs));
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const syncedMutationRef = useRef(mutationVersion);
+  const prevActiveRef = useRef(isActive);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState({
@@ -33,34 +39,64 @@ export function AdminSettingsPage() {
   });
   const [savingInvite, setSavingInvite] = useState(false);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [uList, lList] = await Promise.all([
-        apiFetch<UserProfile[]>('/api/users'),
-        apiFetch<AuditLogRow[]>('/api/audit-logs?limit=40'),
-      ]);
-      setUsers(uList);
-      setLogs(lList);
-    } catch (err: unknown) {
-      setFeedback({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Gagal memuat data pengguna dan audit.',
-      });
-    } finally {
-      setLoading(false);
+  const loadData = useCallback(
+    async (silent = false, bypassCache = false) => {
+      if (!bypassCache) {
+        const cachedUsers = getCached<UserProfile[]>('/api/users');
+        const cachedLogs = getCached<AuditLogRow[]>('/api/audit-logs?limit=40');
+        if (cachedUsers && cachedLogs) {
+          setUsers(cachedUsers);
+          setLogs(cachedLogs);
+          setLoading(false);
+          return;
+        }
+      }
+      if (!silent) setLoading(true);
+      try {
+        const opts = bypassCache ? { cache: 'no-store' as RequestCache } : {};
+        const [uList, lList] = await Promise.all([
+          apiFetch<UserProfile[]>('/api/users', opts),
+          apiFetch<AuditLogRow[]>('/api/audit-logs?limit=40', opts),
+        ]);
+        setUsers(uList);
+        setLogs(lList);
+      } catch (err: unknown) {
+        if (!silent) {
+          setFeedback({
+            type: 'error',
+            text: err instanceof Error ? err.message : 'Gagal memuat data pengguna dan audit.',
+          });
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [apiFetch, getCached],
+  );
+
+  useEffect(() => {
+    if (!getCached('/api/users') || !getCached('/api/audit-logs?limit=40')) {
+      loadData(false, false);
     }
-  }, [apiFetch]);
+  }, [getCached, loadData]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (isActive && !prevActiveRef.current && syncedMutationRef.current !== mutationVersion) {
+      syncedMutationRef.current = mutationVersion;
+      if (!getCached('/api/users') || !getCached('/api/audit-logs?limit=40')) {
+        loadData(true, true);
+      }
+    } else if (isActive) {
+      syncedMutationRef.current = mutationVersion;
+    }
+    prevActiveRef.current = isActive;
+  }, [isActive, mutationVersion, getCached, loadData]);
 
   useEffect(() => {
-    if (!loading) {
+    if (!loading && isActive) {
       refreshScrollTriggers();
     }
-  }, [loading, refreshScrollTriggers]);
+  }, [loading, isActive, refreshScrollTriggers]);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,11 +203,7 @@ export function AdminSettingsPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading && users.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-400">
-                    Memuat daftar pengguna...
-                  </td>
-                </tr>
+                <TableRowsSkeleton cols={5} rows={4} />
               ) : (
                 users.map((u) => {
                   const isSelf = u.id === profile?.id;
@@ -244,7 +276,9 @@ export function AdminSettingsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {logs.length === 0 ? (
+              {loading && logs.length === 0 ? (
+                <TableRowsSkeleton cols={5} rows={5} />
+              ) : logs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-8 text-center text-slate-500">
                     Belum ada catatan audit.
@@ -278,15 +312,17 @@ export function AdminSettingsPage() {
       </MotionCard>
 
       {/* Invite Modal */}
-      {inviteOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-md">
+      <MotionModal
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        maxWidthClass="max-w-md"
+      >
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900">Daftarkan Pengguna Baru</h3>
               <button
                 type="button"
                 onClick={() => setInviteOpen(false)}
-                className="p-1.5 text-slate-500 cursor-pointer"
+                className="p-1.5 text-slate-500 hover:text-slate-900 rounded-md hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -345,9 +381,7 @@ export function AdminSettingsPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </MotionModal>
     </div>
   );
 }

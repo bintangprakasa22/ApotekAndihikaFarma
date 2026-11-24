@@ -1,9 +1,12 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Printer, FileSpreadsheet, Search, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { exportToExcel, formatDate, formatDateTime, formatNumber, formatRupiah } from '../lib/format';
 import { AnimatedHeading } from '../components/AnimatedHeading';
 import { MotionCard } from '../components/MotionCard';
+import { ReportsTableSkeleton } from '../components/PageSkeleton';
+import { SegmentedTabs } from '../components/SegmentedTabs';
+import { useSmoothScroll } from '../components/SmoothScrollProvider';
 
 type ReportType = 'medicines' | 'stock_in' | 'stock_out' | 'low_stock' | 'expiring' | 'topsis';
 
@@ -14,74 +17,156 @@ interface TopsisRunOption {
   periodEnd: string;
 }
 
-export function ReportsPage() {
-  const { apiFetch } = useAuth();
+const REPORT_TABS: { key: ReportType; label: string }[] = [
+  { key: 'medicines', label: 'Data Obat' },
+  { key: 'stock_in', label: 'Stok Masuk' },
+  { key: 'stock_out', label: 'Stok Keluar' },
+  { key: 'low_stock', label: 'Stok Menipis & Habis' },
+  { key: 'expiring', label: 'Obat Kedaluwarsa' },
+  { key: 'topsis', label: 'Hasil TOPSIS' },
+];
+
+export function ReportsPage({ isActive = true }: { isActive?: boolean }) {
+  const { apiFetch, getCached, mutationVersion } = useAuth();
+  const { refreshScrollTriggers } = useSmoothScroll();
   const [reportType, setReportType] = useState<ReportType>('medicines');
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [runId, setRunId] = useState('');
-  const [runs, setRuns] = useState<TopsisRunOption[]>([]);
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(false);
+
+  const initialRuns = useMemo(() => getCached<TopsisRunOption[]>('/api/topsis/runs') ?? [], [getCached]);
+  const initialMedReport = useMemo(
+    () => getCached<{ rows: Record<string, unknown>[] }>('/api/reports/medicines'),
+    [getCached],
+  );
+
+  const [runs, setRuns] = useState<TopsisRunOption[]>(initialRuns);
+  const [rows, setRows] = useState<Record<string, unknown>[]>(initialMedReport?.rows ?? []);
+  const [loading, setLoading] = useState(!initialMedReport);
   const [error, setError] = useState<string | null>(null);
+  const syncedMutationRef = useRef(mutationVersion);
+  const prevActiveRef = useRef(isActive);
+  const reportReqIdRef = useRef(0);
 
-  const reportTabs: { key: ReportType; label: string }[] = [
-    { key: 'medicines', label: 'Data Obat' },
-    { key: 'stock_in', label: 'Stok Masuk' },
-    { key: 'stock_out', label: 'Stok Keluar' },
-    { key: 'low_stock', label: 'Stok Menipis & Habis' },
-    { key: 'expiring', label: 'Obat Kedaluwarsa' },
-    { key: 'topsis', label: 'Hasil TOPSIS' },
-  ];
+  const buildReportUrl = useCallback(() => {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('search', search.trim());
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+    if (reportType === 'topsis' && runId) params.set('runId', runId);
+    const qs = params.toString();
+    return `/api/reports/${reportType}${qs ? `?${qs}` : ''}`;
+  }, [reportType, search, startDate, endDate, runId]);
 
-  useEffect(() => {
-    apiFetch<TopsisRunOption[]>('/api/topsis/runs')
-      .then((list) => {
+  const loadTopsisRuns = useCallback(
+    async (bypassCache = false) => {
+      try {
+        const list = await apiFetch<TopsisRunOption[]>(
+          '/api/topsis/runs',
+          bypassCache ? { cache: 'no-store' } : {},
+        );
         setRuns(list);
-        if (list.length > 0 && !runId) setRunId(String(list[0].id));
-      })
-      .catch(() => {
+        if (list.length > 0) {
+          setRunId((prev) => prev || String(list[0].id));
+        }
+      } catch {
         // ignore
-      });
-  }, [apiFetch, runId]);
-
-  const loadReport = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (search.trim()) params.set('search', search.trim());
-      if (startDate) params.set('startDate', startDate);
-      if (endDate) params.set('endDate', endDate);
-      if (reportType === 'topsis' && runId) params.set('runId', runId);
-
-      const res = await apiFetch<{ rows: Record<string, unknown>[] }>(
-        `/api/reports/${reportType}?${params}`,
-      );
-      setRows(res.rows || []);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Gagal memuat laporan.');
-    } finally {
-      setLoading(false);
-    }
-  }, [apiFetch, reportType, search, startDate, endDate, runId]);
+      }
+    },
+    [apiFetch],
+  );
 
   useEffect(() => {
+    if (!getCached<TopsisRunOption[]>('/api/topsis/runs')) {
+      loadTopsisRuns();
+    } else if (initialRuns.length > 0) {
+      setRunId((prev) => prev || String(initialRuns[0].id));
+    }
+  }, [getCached, initialRuns, loadTopsisRuns]);
+
+  const loadReport = useCallback(
+    async (silent = false, bypassCache = false) => {
+      const url = buildReportUrl();
+      if (!bypassCache) {
+        const cached = getCached<{ rows: Record<string, unknown>[] }>(url);
+        if (cached) {
+          setRows(cached.rows || []);
+          setLoading(false);
+          setError(null);
+          return;
+        }
+      }
+
+      const reqId = ++reportReqIdRef.current;
+      if (!silent) setLoading(true);
+      setError(null);
+      try {
+        const res = await apiFetch<{ rows: Record<string, unknown>[] }>(
+          url,
+          bypassCache ? { cache: 'no-store' } : {},
+        );
+        if (reqId !== reportReqIdRef.current) return;
+        setRows(res.rows || []);
+      } catch (err: unknown) {
+        if (reqId !== reportReqIdRef.current) return;
+        if (!silent) {
+          setError(err instanceof Error ? err.message : 'Gagal memuat laporan.');
+        }
+      } finally {
+        if (reqId === reportReqIdRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [apiFetch, buildReportUrl, getCached],
+  );
+
+  const prevSearchRef = useRef(search);
+  useEffect(() => {
+    const searchChanged = prevSearchRef.current !== search;
+    prevSearchRef.current = search;
+
+    if (!searchChanged) {
+      loadReport(false, false);
+      return;
+    }
     const t = setTimeout(() => {
-      loadReport();
+      loadReport(false, false);
     }, 200);
     return () => clearTimeout(t);
-  }, [loadReport]);
+  }, [search, loadReport]);
 
-  const handleExport = () => {
+  useEffect(() => {
+    if (isActive && !prevActiveRef.current && syncedMutationRef.current !== mutationVersion) {
+      syncedMutationRef.current = mutationVersion;
+      if (!getCached('/api/topsis/runs')) loadTopsisRuns(true);
+      if (!getCached(buildReportUrl())) loadReport(true, true);
+    } else if (isActive) {
+      syncedMutationRef.current = mutationVersion;
+    }
+    prevActiveRef.current = isActive;
+  }, [isActive, mutationVersion, buildReportUrl, getCached, loadTopsisRuns, loadReport]);
+
+  useEffect(() => {
+    if (isActive && !loading) {
+      refreshScrollTriggers();
+    }
+  }, [isActive, loading, reportType, refreshScrollTriggers]);
+
+  const currentTabLabel = useMemo(
+    () => REPORT_TABS.find((t) => t.key === reportType)?.label ?? '',
+    [reportType],
+  );
+
+  const handleExport = useCallback(() => {
     if (rows.length === 0) return;
-    exportToExcel(
+    void exportToExcel(
       rows,
       `Laporan_${reportType}`,
       `Laporan_${reportType}_Apotek_Andhika_Farma.xlsx`,
     );
-  };
+  }, [rows, reportType]);
 
   return (
     <div className="space-y-5">
@@ -121,22 +206,14 @@ export function ReportsPage() {
       </div>
 
       {/* Report Type Selector */}
-      <div className="no-print flex flex-wrap gap-1 bg-white border border-slate-200 rounded-xl p-1.5">
-        {reportTabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setReportType(t.key)}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-              reportType === t.key
-                ? 'bg-sky-600 text-white'
-                : 'text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <SegmentedTabs
+        layoutId="report-tabs"
+        activeKey={reportType}
+        onChange={setReportType}
+        items={REPORT_TABS}
+        className="no-print p-1.5 rounded-xl"
+        itemClassName="rounded-lg"
+      />
 
       {/* Filters */}
       <MotionCard index={0} hoverLift={false} className="no-print bg-white border border-slate-200 rounded-xl p-4 flex flex-col lg:flex-row lg:items-center gap-3 text-xs">
@@ -185,7 +262,7 @@ export function ReportsPage() {
 
         <button
           type="button"
-          onClick={loadReport}
+          onClick={() => loadReport(false, true)}
           className="px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1.5 cursor-pointer self-start lg:self-auto"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -204,7 +281,7 @@ export function ReportsPage() {
         <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
           <AnimatedHeading
             as="h2"
-            text={`Laporan ${reportTabs.find((t) => t.key === reportType)?.label ?? ''}`}
+            text={`Laporan ${currentTabLabel}`}
             className="text-sm font-bold text-slate-900"
           />
           <span className="text-xs text-slate-500 tabular-nums">
@@ -214,7 +291,7 @@ export function ReportsPage() {
 
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="py-12 text-center text-xs text-slate-400">Menyiapkan laporan...</div>
+            <ReportsTableSkeleton />
           ) : rows.length === 0 ? (
             <div className="py-12 text-center text-xs text-slate-500">
               Tidak ada data untuk laporan ini.

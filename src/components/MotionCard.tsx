@@ -1,5 +1,5 @@
-import React from 'react';
-import { motion } from 'motion/react';
+import React, { memo } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 
 interface MotionCardProps {
   children: React.ReactNode;
@@ -11,7 +11,9 @@ interface MotionCardProps {
   onClick?: () => void;
 }
 
-export function MotionCard({
+const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const;
+
+export const MotionCard = memo(function MotionCard({
   children,
   className = '',
   index = 0,
@@ -20,16 +22,38 @@ export function MotionCard({
   type = 'button',
   onClick,
 }: MotionCardProps) {
-  const delay = Math.min(index, 6) * 0.045;
+  const shouldReduceMotion = useReducedMotion();
+
+  if (shouldReduceMotion) {
+    if (as === 'button') {
+      return (
+        <button
+          type={type}
+          onClick={onClick}
+          className={`group print-reset transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 ${className}`}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    return (
+      <div onClick={onClick} className={`print-reset transition-colors duration-150 ${className}`}>
+        {children}
+      </div>
+    );
+  }
+
+  const delay = Math.min(index, 5) * 0.035;
   const hoverAnimation = hoverLift
-    ? { y: -3, transition: { duration: 0.18, ease: [0.16, 1, 0.3, 1] as const } }
+    ? { y: -2.5, transition: { duration: 0.16, ease: EASE_OUT_EXPO } }
     : undefined;
 
   const baseMotionProps = {
-    initial: { opacity: 0, y: 16 },
+    initial: { opacity: 0, y: 12 },
     whileInView: { opacity: 1, y: 0 },
-    viewport: { once: true, amount: 0.08 },
-    transition: { duration: 0.36, delay, ease: [0.16, 1, 0.3, 1] as const },
+    viewport: { once: true, amount: 'some' as const },
+    transition: { duration: 0.28, delay, ease: EASE_OUT_EXPO },
     whileHover: hoverAnimation,
   };
 
@@ -38,9 +62,9 @@ export function MotionCard({
       <motion.button
         type={type}
         onClick={onClick}
-        whileTap={{ scale: 0.985 }}
+        whileTap={{ scale: 0.985, transition: { duration: 0.08 } }}
         {...baseMotionProps}
-        className={`transition-[border-color,box-shadow] duration-200 hover:shadow-md ${className}`}
+        className={`group print-reset transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 ${className}`}
       >
         {children}
       </motion.button>
@@ -51,9 +75,9 @@ export function MotionCard({
     <motion.div
       onClick={onClick}
       {...baseMotionProps}
-      className={`transition-[border-color,box-shadow] duration-200 hover:shadow-sm ${className}`}
+      className={`print-reset transition-colors duration-150 ${className}`}
     >
       {children}
     </motion.div>
   );
-}
+});

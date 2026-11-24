@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -14,6 +14,13 @@ import { useAuth } from '../context/AuthContext';
 import { formatDate, formatDateTime, formatNumber, formatRupiah } from '../lib/format';
 import { AnimatedHeading } from '../components/AnimatedHeading';
 import { MotionCard } from '../components/MotionCard';
+import {
+  AlertsCardsSkeleton,
+  MedicinePickerSkeleton,
+  TableRowsSkeleton,
+} from '../components/PageSkeleton';
+import { SegmentedTabs } from '../components/SegmentedTabs';
+import { useSmoothScroll } from '../components/SmoothScrollProvider';
 
 type StockTab = 'in' | 'out' | 'history' | 'alerts';
 
@@ -74,17 +81,38 @@ interface AlertsPayload {
   }[];
 }
 
-export function StockManagementPage() {
-  const { apiFetch, refreshProfile } = useAuth();
+export function StockManagementPage({ isActive = true }: { isActive?: boolean }) {
+  const { apiFetch, getCached, refreshProfile, mutationVersion } = useAuth();
+  const { refreshScrollTriggers } = useSmoothScroll();
   const [activeTab, setActiveTab] = useState<StockTab>('in');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const syncedMutationRef = useRef(mutationVersion);
+  const prevActiveRef = useRef(isActive);
+  const medSearchReqIdRef = useRef(0);
+  const histReqIdRef = useRef(0);
+
+  const initialSups = useMemo(() => getCached<SupplierOption[]>('/api/suppliers'), [getCached]);
+  const initialMeds = useMemo(
+    () => getCached<{ items: MedicineOption[] }>('/api/medicines?limit=25&page=1'),
+    [getCached],
+  );
+  const initialHist = useMemo(
+    () =>
+      getCached<{ items: StockMovementRow[]; total: number; totalPages: number }>(
+        '/api/stock-movements?page=1&limit=20&type=all',
+      ),
+    [getCached],
+  );
+  const initialAlerts = useMemo(() => getCached<AlertsPayload>('/api/alerts'), [getCached]);
 
   // Medicine search & selector for Stok Masuk / Keluar
   const [medQuery, setMedQuery] = useState('');
-  const [medOptions, setMedOptions] = useState<MedicineOption[]>([]);
+  const [medOptions, setMedOptions] = useState<MedicineOption[]>(initialMeds?.items ?? []);
+  const [loadingMeds, setLoadingMeds] = useState(!initialMeds);
   const [selectedMed, setSelectedMed] = useState<MedicineOption | null>(null);
   const [selectedBatches, setSelectedBatches] = useState<BatchItem[]>([]);
-  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>(initialSups ?? []);
 
   // Stok Masuk form
   const [inForm, setInForm] = useState({
@@ -109,87 +137,145 @@ export function StockManagementPage() {
   >([]);
 
   // History state
-  const [historyRows, setHistoryRows] = useState<StockMovementRow[]>([]);
+  const [historyRows, setHistoryRows] = useState<StockMovementRow[]>(initialHist?.items ?? []);
   const [histSearch, setHistSearch] = useState('');
   const [histType, setHistType] = useState('all');
   const [histStart, setHistStart] = useState('');
   const [histEnd, setHistEnd] = useState('');
   const [histPage, setHistPage] = useState(1);
-  const [histTotal, setHistTotal] = useState(0);
-  const [histTotalPages, setHistTotalPages] = useState(1);
+  const [histTotal, setHistTotal] = useState(initialHist?.total ?? 0);
+  const [histTotalPages, setHistTotalPages] = useState(initialHist?.totalPages ?? 1);
   const [loadingHist, setLoadingHist] = useState(false);
 
   // Alerts state
-  const [alerts, setAlerts] = useState<AlertsPayload | null>(null);
+  const [alerts, setAlerts] = useState<AlertsPayload | null>(initialAlerts);
   const [loadingAlerts, setLoadingAlerts] = useState(false);
 
   const loadSuppliers = useCallback(async () => {
+    const cached = getCached<SupplierOption[]>('/api/suppliers');
+    if (cached) {
+      setSuppliers(cached);
+      return;
+    }
     try {
       const sups = await apiFetch<SupplierOption[]>('/api/suppliers');
       setSuppliers(sups);
     } catch {
       // ignore
     }
-  }, [apiFetch]);
+  }, [apiFetch, getCached]);
 
   const searchMedicines = useCallback(
     async (q: string) => {
+      const params = new URLSearchParams({ limit: '25', page: '1' });
+      if (q.trim()) params.set('search', q.trim());
+      const url = `/api/medicines?${params}`;
+      const cached = getCached<{ items: MedicineOption[] }>(url);
+      if (cached) {
+        setMedOptions(cached.items);
+        setLoadingMeds(false);
+        return;
+      }
+
+      const reqId = ++medSearchReqIdRef.current;
+      setLoadingMeds(true);
       try {
-        const params = new URLSearchParams({ limit: '25', page: '1' });
-        if (q.trim()) params.set('search', q.trim());
-        const res = await apiFetch<{ items: MedicineOption[] }>(`/api/medicines?${params}`);
+        const res = await apiFetch<{ items: MedicineOption[] }>(url);
+        if (reqId !== medSearchReqIdRef.current) return;
         setMedOptions(res.items);
       } catch {
         // ignore
+      } finally {
+        if (reqId === medSearchReqIdRef.current) {
+          setLoadingMeds(false);
+        }
       }
     },
-    [apiFetch],
+    [apiFetch, getCached],
   );
 
   const loadBatchesForMed = useCallback(
     async (medId: number) => {
+      const url = `/api/medicines/${medId}/batches`;
+      const cached = getCached<BatchItem[]>(url);
+      if (cached) {
+        setSelectedBatches(cached.filter((b) => b.remainingQty > 0));
+        setLoadingBatches(false);
+        return;
+      }
+      setLoadingBatches(true);
       try {
-        const rows = await apiFetch<BatchItem[]>(`/api/medicines/${medId}/batches`);
+        const rows = await apiFetch<BatchItem[]>(url);
         setSelectedBatches(rows.filter((b) => b.remainingQty > 0));
       } catch {
         setSelectedBatches([]);
+      } finally {
+        setLoadingBatches(false);
       }
     },
-    [apiFetch],
+    [apiFetch, getCached],
   );
 
+  const buildHistoryUrl = useCallback(() => {
+    const params = new URLSearchParams({
+      page: String(histPage),
+      limit: '20',
+      type: histType,
+    });
+    if (histSearch.trim()) params.set('search', histSearch.trim());
+    if (histStart) params.set('startDate', histStart);
+    if (histEnd) params.set('endDate', histEnd);
+    return `/api/stock-movements?${params}`;
+  }, [histPage, histType, histSearch, histStart, histEnd]);
+
   const loadHistory = useCallback(async () => {
+    const url = buildHistoryUrl();
+    const cached = getCached<{
+      items: StockMovementRow[];
+      total: number;
+      totalPages: number;
+    }>(url);
+    if (cached) {
+      setHistoryRows(cached.items);
+      setHistTotal(cached.total);
+      setHistTotalPages(cached.totalPages);
+      setLoadingHist(false);
+      return;
+    }
+
+    const reqId = ++histReqIdRef.current;
     setLoadingHist(true);
     try {
-      const params = new URLSearchParams({
-        page: String(histPage),
-        limit: '20',
-        type: histType,
-      });
-      if (histSearch.trim()) params.set('search', histSearch.trim());
-      if (histStart) params.set('startDate', histStart);
-      if (histEnd) params.set('endDate', histEnd);
-
       const res = await apiFetch<{
         items: StockMovementRow[];
         total: number;
         totalPages: number;
-      }>(`/api/stock-movements?${params}`);
+      }>(url);
 
+      if (reqId !== histReqIdRef.current) return;
       setHistoryRows(res.items);
       setHistTotal(res.total);
       setHistTotalPages(res.totalPages);
     } catch (err: unknown) {
+      if (reqId !== histReqIdRef.current) return;
       setFeedback({
         type: 'error',
         text: err instanceof Error ? err.message : 'Gagal memuat riwayat stok.',
       });
     } finally {
-      setLoadingHist(false);
+      if (reqId === histReqIdRef.current) {
+        setLoadingHist(false);
+      }
     }
-  }, [apiFetch, histPage, histType, histSearch, histStart, histEnd]);
+  }, [apiFetch, buildHistoryUrl, getCached]);
 
   const loadAlerts = useCallback(async () => {
+    const cached = getCached<AlertsPayload>('/api/alerts');
+    if (cached) {
+      setAlerts(cached);
+      setLoadingAlerts(false);
+      return;
+    }
     setLoadingAlerts(true);
     try {
       const res = await apiFetch<AlertsPayload>('/api/alerts');
@@ -202,35 +288,92 @@ export function StockManagementPage() {
     } finally {
       setLoadingAlerts(false);
     }
-  }, [apiFetch]);
+  }, [apiFetch, getCached]);
 
   useEffect(() => {
-    loadSuppliers();
-  }, [loadSuppliers]);
+    if (!getCached('/api/suppliers')) {
+      loadSuppliers();
+    }
+  }, [getCached, loadSuppliers]);
 
+  const prevMedQueryRef = useRef(medQuery);
   useEffect(() => {
+    const queryChanged = prevMedQueryRef.current !== medQuery;
+    prevMedQueryRef.current = medQuery;
+
+    if (!queryChanged) {
+      searchMedicines(medQuery);
+      return;
+    }
     const t = setTimeout(() => {
       searchMedicines(medQuery);
     }, 200);
     return () => clearTimeout(t);
   }, [medQuery, searchMedicines]);
 
+  const prevHistSearchRef = useRef(histSearch);
   useEffect(() => {
-    if (activeTab === 'history') loadHistory();
+    if (activeTab === 'history') {
+      const searchChanged = prevHistSearchRef.current !== histSearch;
+      prevHistSearchRef.current = histSearch;
+      if (!searchChanged) {
+        loadHistory();
+        return;
+      }
+      const t = setTimeout(() => {
+        loadHistory();
+      }, 200);
+      return () => clearTimeout(t);
+    }
     if (activeTab === 'alerts') loadAlerts();
-  }, [activeTab, loadHistory, loadAlerts]);
+  }, [activeTab, histSearch, loadHistory, loadAlerts]);
 
-  const handleSelectMedicine = (m: MedicineOption) => {
-    setSelectedMed(m);
-    setLastFefoAllocations([]);
-    setInForm((prev) => ({
-      ...prev,
-      supplierId: m.supplierId ? String(m.supplierId) : prev.supplierId,
-      purchasePrice: m.purchasePrice > 0 ? String(m.purchasePrice) : '',
-      batchNumber: `B-${m.pluCode}-${new Date().toISOString().slice(2, 7).replace('-', '')}`,
-    }));
-    loadBatchesForMed(m.id);
-  };
+  useEffect(() => {
+    if (isActive && !prevActiveRef.current && syncedMutationRef.current !== mutationVersion) {
+      syncedMutationRef.current = mutationVersion;
+      if (!getCached('/api/suppliers')) loadSuppliers();
+      searchMedicines(medQuery);
+      if (selectedMed) loadBatchesForMed(selectedMed.id);
+      if (activeTab === 'history') loadHistory();
+      if (activeTab === 'alerts') loadAlerts();
+    } else if (isActive) {
+      syncedMutationRef.current = mutationVersion;
+    }
+    prevActiveRef.current = isActive;
+  }, [
+    isActive,
+    mutationVersion,
+    activeTab,
+    medQuery,
+    selectedMed,
+    getCached,
+    loadSuppliers,
+    searchMedicines,
+    loadBatchesForMed,
+    loadHistory,
+    loadAlerts,
+  ]);
+
+  useEffect(() => {
+    if (isActive) {
+      refreshScrollTriggers();
+    }
+  }, [isActive, activeTab, refreshScrollTriggers]);
+
+  const handleSelectMedicine = useCallback(
+    (m: MedicineOption) => {
+      setSelectedMed(m);
+      setLastFefoAllocations([]);
+      setInForm((prev) => ({
+        ...prev,
+        supplierId: m.supplierId ? String(m.supplierId) : prev.supplierId,
+        purchasePrice: m.purchasePrice > 0 ? String(m.purchasePrice) : '',
+        batchNumber: `B-${m.pluCode}-${new Date().toISOString().slice(2, 7).replace('-', '')}`,
+      }));
+      loadBatchesForMed(m.id);
+    },
+    [loadBatchesForMed],
+  );
 
   const handleStockInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -355,33 +498,18 @@ export function StockManagementPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 self-start">
-          {(
-            [
-              { key: 'in', label: 'Stok Masuk', icon: ArrowDownLeft },
-              { key: 'out', label: 'Stok Keluar (FEFO)', icon: ArrowUpRight },
-              { key: 'history', label: 'Riwayat Pergerakan', icon: History },
-              { key: 'alerts', label: 'Peringatan Stok & ED', icon: AlertTriangle },
-            ] as { key: StockTab; label: string; icon: React.ComponentType<{ className?: string }> }[]
-          ).map((t) => {
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setActiveTab(t.key)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  activeTab === t.key
-                    ? 'bg-sky-600 text-white'
-                    : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedTabs
+          layoutId="stock-tabs"
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          className="self-start"
+          items={[
+            { key: 'in', label: 'Stok Masuk', icon: ArrowDownLeft },
+            { key: 'out', label: 'Stok Keluar (FEFO)', icon: ArrowUpRight },
+            { key: 'history', label: 'Riwayat Pergerakan', icon: History },
+            { key: 'alerts', label: 'Peringatan Stok & ED', icon: AlertTriangle },
+          ]}
+        />
       </div>
 
       {feedback && (
@@ -417,42 +545,50 @@ export function StockManagementPage() {
                 />
               </div>
             </div>
-            <div className="divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
-              {medOptions.map((m) => {
-                const isSelected = selectedMed?.id === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => handleSelectMedicine(m)}
-                    className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 transition-colors cursor-pointer ${
-                      isSelected ? 'bg-sky-50' : 'hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-slate-900 truncate">{m.name}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
-                        <span className="font-mono">{m.pluCode}</span> · ED:{' '}
-                        {formatDate(m.nearestExpiredDate)}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0 tabular-nums">
-                      <p
-                        className={`text-xs font-bold ${
-                          m.stock <= 0
-                            ? 'text-rose-600'
-                            : m.stock <= m.minStock
-                              ? 'text-amber-600'
-                              : 'text-emerald-700'
-                        }`}
-                      >
-                        {formatNumber(m.stock, 0)}
-                      </p>
-                      <p className="text-[10px] text-slate-400">{m.unit}</p>
-                    </div>
-                  </button>
-                );
-              })}
+            <div data-lenis-prevent className="divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
+              {loadingMeds && medOptions.length === 0 ? (
+                <MedicinePickerSkeleton rows={7} />
+              ) : medOptions.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  Obat tidak ditemukan.
+                </div>
+              ) : (
+                medOptions.map((m) => {
+                  const isSelected = selectedMed?.id === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => handleSelectMedicine(m)}
+                      className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                        isSelected ? 'bg-sky-50' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-900 truncate">{m.name}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+                          <span className="font-mono">{m.pluCode}</span> · ED:{' '}
+                          {formatDate(m.nearestExpiredDate)}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0 tabular-nums">
+                        <p
+                          className={`text-xs font-bold ${
+                            m.stock <= 0
+                              ? 'text-rose-600'
+                              : m.stock <= m.minStock
+                                ? 'text-amber-600'
+                                : 'text-emerald-700'
+                          }`}
+                        >
+                          {formatNumber(m.stock, 0)}
+                        </p>
+                        <p className="text-[10px] text-slate-400">{m.unit}</p>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </MotionCard>
 
@@ -710,7 +846,9 @@ export function StockManagementPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {selectedBatches.length === 0 ? (
+                      {loadingBatches ? (
+                        <TableRowsSkeleton cols={4} rows={3} />
+                      ) : selectedBatches.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="py-5 text-center text-slate-500">
                             Tidak ada batch dengan sisa stok &gt; 0.
@@ -808,11 +946,7 @@ export function StockManagementPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
                 {loadingHist ? (
-                  <tr>
-                    <td colSpan={7} className="py-10 text-center text-slate-400">
-                      Memuat riwayat pergerakan stok...
-                    </td>
-                  </tr>
+                  <TableRowsSkeleton cols={7} rows={7} />
                 ) : historyRows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-10 text-center text-slate-500">
@@ -904,9 +1038,7 @@ export function StockManagementPage() {
       {activeTab === 'alerts' && (
         <div className="space-y-6">
           {loadingAlerts && !alerts ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-xs text-slate-500">
-              Memuat data peringatan...
-            </div>
+            <AlertsCardsSkeleton />
           ) : alerts ? (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               {/* Stok Habis */}
